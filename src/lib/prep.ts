@@ -11,15 +11,17 @@ import {
   CasesSchema,
   SituationalSchema,
   OutlineSchema,
+  ModelAnswerSchema,
   type FitMap,
   type Concepts,
   type Questions,
   type Cases,
   type Situational,
   type Outline,
+  type ModelAnswer,
   type KitSection,
 } from "./schemas";
-import { P3, P4, P5, P6, P7, P8, P10, conceptNames } from "./prompts";
+import { P3, P4, P5, P6, P7, P8, P10, P11, conceptNames } from "./prompts";
 import { profileLines, linesAsPrompt } from "./profile-lines";
 
 export function requireProfile() {
@@ -258,6 +260,43 @@ export async function ensureOutline(jdId: string, question: string): Promise<Out
   data.source_refs = data.source_refs.filter((r) => valid.has(r));
   store.saveKit(jdId, key, data, P8.version);
   return data;
+}
+
+/** Model answer for one practice item, in the candidate's voice; cached by item text. */
+export async function ensureModelAnswer(jdId: string, itemId: string): Promise<ModelAnswer> {
+  const item = practiceItems(jdId).find((i) => i.id === itemId);
+  if (!item) throw new LLMError("no item", "Practice item not found.", 404);
+  const key = "model:" + item.text.slice(0, 200);
+  const cached = store.getKit(jdId, key);
+  if (cached) return cached.data as ModelAnswer;
+  return once(`${jdId}:${key}`, async () => {
+    const jd = requireJD(jdId);
+    const lines = profileLines(requireProfile().data);
+    const data = await callLLM({
+      name: P11.name,
+      version: P11.version,
+      system: P11.system,
+      user: P11.user({
+        itemType: item.type,
+        question: item.text,
+        hint: item.hint,
+        jd: jd.data,
+        company: jd.company,
+        profile: linesAsPrompt(lines),
+      }),
+      schema: ModelAnswerSchema,
+      maxTokens: 3000,
+    });
+    // Grounding guard: drop any cited line that is not in the profile.
+    const valid = new Set(lines.map((l) => l.ref));
+    data.source_refs = data.source_refs.filter((r) => valid.has(r));
+    // The answer is spoken, so strip line refs like "(EX2.B1, EX2.B7)" or "[EX2.B8]" left in the text.
+    // Placeholders such as "[add metric]" are lowercase words, so they are kept.
+    const refs = /\s*[([](?:[A-Z]{1,4}\d+(?:\.[A-Z]+\d+)?(?:,\s*)?)+[)\]]/g;
+    data.sections = data.sections.map((sec) => ({ ...sec, text: sec.text.replace(refs, "") }));
+    store.saveKit(jdId, key, data, P11.version);
+    return data;
+  });
 }
 
 /* ---------- Practice items and study plan (built in code) ---------- */

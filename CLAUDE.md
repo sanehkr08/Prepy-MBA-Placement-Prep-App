@@ -64,12 +64,13 @@ prepy/
         kit/[jdId]/plan/route.ts       GET / PUT study plan
         practice/[jdId]/route.ts       GET practice queue
         practice/score/route.ts        POST score an answer (P9), saves attempt
+        practice/model/route.ts        POST model answer for one practice item, in the candidate's voice (P11)
         data/route.ts                  DELETE all data
         health/llm/route.ts            GET quick API-key check
     components/   ui.tsx (shell, rail, Back/Next step bar, chips, cards, buttons), ProfileEditor.tsx, hooks.ts (useProfile, useDictation, useUndoableText)
     lib/
       llm.ts            callLLM (JSON + Zod + one retry + logging), errorResponse
-      prompts.ts        P1–P10 with versions + GROUNDING_RULE
+      prompts.ts        P1–P11 with versions + GROUNDING_RULE
       prep.ts           orchestration, caching, in-flight request sharing, kit prefetch, Generate More, grounding guards, practice queue, study plan
       profile-lines.ts  numbered profile lines (ED1, EX1.B2, AC1…) used for citations
       schemas.ts        Zod schemas

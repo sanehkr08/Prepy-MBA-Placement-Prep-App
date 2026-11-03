@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Briefcase, Check, Mic, Square, Undo2, Redo2, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { Briefcase, Check, Mic, Square, Undo2, Redo2, ChevronDown, ChevronLeft, ChevronRight, Sparkles } from "lucide-react";
 import { api, rememberJD } from "@/lib/client";
 import type { PracticeScore } from "@/lib/schemas";
 import { useDictation, useUndoableText } from "@/components/hooks";
@@ -29,6 +29,13 @@ type Item = {
   text: string;
   hint: string;
   concepts: string[];
+};
+type ModelView = {
+  structure: string;
+  sections: { label: string; text: string }[];
+  why_it_works: string[];
+  placeholders: string[];
+  sources: string[];
 };
 type QueueResponse = { jd: { id: string; company: string; role: string }; items: Item[]; attempted: string[] };
 
@@ -94,6 +101,10 @@ function PracticeInner() {
   const [scoring, setScoring] = useState(false);
   const [result, setResult] = useState<PracticeScore | null>(null);
   const [scoreError, setScoreError] = useState<string | null>(null);
+  const [model, setModel] = useState<{ state: "loading" | "done" | "error"; data?: ModelView; error?: string } | null>(null);
+  const [showModel, setShowModel] = useState(false);
+  const feedbackRef = useRef<HTMLElement>(null);
+  const modelRef = useRef<HTMLElement>(null);
 
   const onDictated = useCallback(
     (t: string, phraseDone: boolean) => setAnswer(t, phraseDone ? "phrase" : "interim"),
@@ -141,6 +152,8 @@ function PracticeInner() {
     setResult(null);
     setScoreError(null);
     setUsedVoice(false);
+    setModel(null);
+    setShowModel(false);
   }
 
   // Undo/redo stop the mic first, so words still being recognised are not added straight back.
@@ -170,11 +183,36 @@ function PracticeInner() {
         body: JSON.stringify({ jdId, itemId: current.id, answer, inputMode: usedVoice ? "voice" : "typed" }),
       });
       setResult(r.result);
+      requestAnimationFrame(() => feedbackRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
       setQueue((q) => (q ? { ...q, attempted: Array.from(new Set([...q.attempted, current.id])) } : q));
     } catch (e) {
       setScoreError((e as Error).message);
     } finally {
       setScoring(false);
+    }
+  }
+
+  async function seeModelAnswer() {
+    if (!current) return;
+    if (model?.state === "done" || model?.state === "loading") {
+      setShowModel((v) => !v);
+      return;
+    }
+    const itemId = current.id;
+    setShowModel(true);
+    setModel({ state: "loading" });
+    try {
+      const r = await api<{ model: ModelView }>("/api/practice/model", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jdId, itemId }),
+      });
+      // Ignore a late reply if the user has moved to another question.
+      if (search.get("item") && search.get("item") !== itemId) return;
+      setModel({ state: "done", data: r.model });
+      requestAnimationFrame(() => modelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    } catch (e) {
+      setModel({ state: "error", error: (e as Error).message });
     }
   }
 
@@ -233,59 +271,7 @@ function PracticeInner() {
     return () => document.removeEventListener("mousedown", close);
   }, []);
 
-  const panel = result ? (
-    <>
-      <div>
-        <p className="text-[13px] font-medium text-muted">Feedback</p>
-        <h2 className="mt-1 text-[26px] font-medium leading-tight">{result.headline}</h2>
-      </div>
-      <PanelCard>
-        <dl className="flex flex-col gap-3.5">
-          {SCORE_LABELS.map(([k, label], idx) => (
-            <div key={k} className="flex flex-col gap-1.5">
-              <div className="flex justify-between gap-2">
-                <dt className="text-sm">{label}</dt>
-                <dd className="text-sm font-bold">{result.scores[k]}/5</dd>
-              </div>
-              <dd aria-hidden className="flex gap-1">
-                {[1, 2, 3, 4, 5].map((n) => (
-                  <span key={n} className={`h-2.5 flex-1 rounded-full ${n <= result.scores[k] ? SCORE_COLORS[idx] : "bg-panel"}`} />
-                ))}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      </PanelCard>
-      {result.concepts_used.length + result.concepts_missed.length > 0 ? (
-        <PanelCard title="Concepts">
-          <ul className="flex flex-wrap gap-2 text-[13px] font-semibold">
-            {result.concepts_used.map((c) => (
-              <li key={"u" + c} className="rounded-full bg-mint px-3 py-1.5">
-                Used: {c}
-              </li>
-            ))}
-            {result.concepts_missed.map((c) => (
-              <li key={"m" + c} className="rounded-full bg-pink px-3 py-1.5">
-                Missed: {c}
-              </li>
-            ))}
-          </ul>
-        </PanelCard>
-      ) : null}
-      <PanelCard title="A stronger answer">
-        <ol className="list-decimal pl-5 text-sm">
-          {result.stronger_answer.map((s, i) => (
-            <li key={i} className="mb-1.5">
-              {s}
-            </li>
-          ))}
-        </ol>
-      </PanelCard>
-      {nextItem ? (
-        <PrimaryButton onClick={() => goTo(nextItem.id)}>Next: {TYPE_LABEL[nextItem.type] ?? "item"} →</PrimaryButton>
-      ) : null}
-    </>
-  ) : (
+  const panel = (
     <>
       <PanelCard title="How scoring works">
         <p className="text-sm">
@@ -568,11 +554,152 @@ function PracticeInner() {
               {scoring ? "Scoring…" : "Score my answer"}
             </PrimaryButton>
             {result ? (
-              <SecondaryButton onClick={() => setResult(null)} className="min-h-[52px] bg-panel">
-                Revise and retry
-              </SecondaryButton>
+              <>
+                <SecondaryButton
+                  onClick={() => {
+                    setResult(null);
+                    document.getElementById("answer")?.focus();
+                  }}
+                  className="min-h-[52px] bg-panel"
+                >
+                  Revise and retry
+                </SecondaryButton>
+                <SecondaryButton onClick={seeModelAnswer} className="min-h-[52px] bg-panel" aria-expanded={showModel}>
+                  <Sparkles size={16} aria-hidden />
+                  {model?.state === "loading" && showModel
+                    ? "Writing model answer…"
+                    : showModel && model?.state === "done"
+                      ? "Hide model answer"
+                      : "See model answer"}
+                </SecondaryButton>
+              </>
             ) : null}
           </div>
+
+          {result ? (
+            <section
+              ref={feedbackRef}
+              aria-labelledby="feedback-h"
+              className="mt-8 flex scroll-mt-6 flex-col gap-6 rounded-[36px] bg-white p-6 md:p-8"
+            >
+              <div>
+                <p className="text-[13px] font-semibold text-muted">
+                  Feedback · overall{" "}
+                  {SCORE_LABELS.reduce((sum, [k]) => sum + result.scores[k], 0)}/{SCORE_LABELS.length * 5}
+                </p>
+                <h2 id="feedback-h" className="mt-1.5 text-[28px] font-medium leading-tight tracking-[-0.01em]">
+                  {result.headline}
+                </h2>
+              </div>
+
+              <dl className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {SCORE_LABELS.map(([k, label], idx) => (
+                  <div key={k} className={`flex flex-col gap-2.5 rounded-[24px] p-4 ${SCORE_COLORS[idx]}`}>
+                    <dt className="text-sm font-semibold">{label}</dt>
+                    <dd className="text-[32px] font-medium leading-none">
+                      {result.scores[k]}
+                      <span className="text-[15px] font-normal">/5</span>
+                    </dd>
+                    <dd aria-hidden className="flex gap-1">
+                      {[1, 2, 3, 4, 5].map((n) => (
+                        <span key={n} className={`h-2 flex-1 rounded-full ${n <= result.scores[k] ? "bg-ink" : "bg-white/70"}`} />
+                      ))}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+
+              {result.concepts_used.length + result.concepts_missed.length > 0 ? (
+                <div>
+                  <h3 className="mb-2.5 text-[17px] font-medium">Concepts</h3>
+                  <ul className="flex flex-wrap gap-2 text-[13px] font-semibold">
+                    {result.concepts_used.map((c) => (
+                      <li key={"u" + c} className="rounded-full bg-mint px-3 py-1.5">
+                        Used: {c}
+                      </li>
+                    ))}
+                    {result.concepts_missed.map((c) => (
+                      <li key={"m" + c} className="rounded-full bg-pink px-3 py-1.5">
+                        Missed: {c}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              <div>
+                <h3 className="mb-2.5 text-[17px] font-medium">How to make it stronger</h3>
+                <ol className="flex list-decimal flex-col gap-2 pl-5 text-[15px] leading-relaxed">
+                  {result.stronger_answer.map((step, i) => (
+                    <li key={i}>{step}</li>
+                  ))}
+                </ol>
+              </div>
+
+              {nextItem ? (
+                <div>
+                  <PrimaryButton onClick={() => goTo(nextItem.id)}>Next question →</PrimaryButton>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
+          {result && showModel ? (
+            <section
+              ref={modelRef}
+              aria-labelledby="model-h"
+              className="mt-6 flex scroll-mt-6 flex-col gap-5 rounded-[36px] bg-mint p-6 md:p-8"
+            >
+              <div>
+                <p className="text-[13px] font-semibold">
+                  Model answer{model?.data?.structure ? ` · ${model.data.structure}` : ""}
+                </p>
+                <h2 id="model-h" className="mt-1.5 text-[28px] font-medium leading-tight tracking-[-0.01em]">
+                  How you could answer it
+                </h2>
+              </div>
+              {model?.state === "loading" ? (
+                <Spinner label="Writing a model answer from your resume…" />
+              ) : model?.state === "error" ? (
+                <ErrorBox
+                  message={model.error ?? "Could not write the model answer."}
+                  onRetry={() => {
+                    setModel(null);
+                    void seeModelAnswer();
+                  }}
+                />
+              ) : model?.data ? (
+                <>
+                  <dl className="flex flex-col gap-3">
+                    {model.data.sections.map((sec, i) => (
+                      <div key={i} className="rounded-[20px] bg-white p-4">
+                        <dt className="text-xs font-bold uppercase tracking-wide text-muted">{sec.label}</dt>
+                        <dd className="mt-1 text-[16px] leading-relaxed">{sec.text}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  {model.data.why_it_works.length ? (
+                    <div>
+                      <h3 className="mb-2 text-[17px] font-medium">Why it works</h3>
+                      <ul className="flex list-disc flex-col gap-1.5 pl-5 text-[15px]">
+                        {model.data.why_it_works.map((w, i) => (
+                          <li key={i}>{w}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : null}
+                  <p className="text-[13px] font-semibold">
+                    {model.data.sources.length
+                      ? `Built from your resume: ${model.data.sources.join(" · ")}`
+                      : "No direct resume line used."}
+                    {model.data.placeholders.length
+                      ? ` Replace the placeholders with your real details: ${model.data.placeholders.join(", ")}.`
+                      : ""}
+                  </p>
+                </>
+              ) : null}
+            </section>
+          ) : null}
         </>
       )}
     </AppShell>

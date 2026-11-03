@@ -1,5 +1,5 @@
 /**
- * All prompts P1–P10. Bump a prompt's version when you change it, so evals can
+ * All prompts P1–P11. Bump a prompt's version when you change it, so evals can
  * compare versions (BUILD_PLAN Task 10).
  */
 import type { JDData, FitMap, Concepts, Questions, Cases, Situational } from "./schemas";
@@ -262,6 +262,29 @@ Add 4 NEW ${
   }. Return JSON:
 {"situational": [{"text": string, "competency": string}] (${kind === "situational" ? "4 items" : "empty array"}),
  "behavioral": [{"text": string, "competency": string}] (${kind === "behavioral" ? "4 items" : "empty array"})}`,
+};
+
+/* P11 — Model answer: how a strong candidate (the user) would say it in the interview */
+export const P11 = {
+  name: "P11_model_answer",
+  version: "v1",
+  system: `You write model interview answers for this candidate, in their voice: first person, as they would say it out loud to the interviewer. Well structured, specific to this role and JD, confident and concise (about 1.5 to 2 minutes spoken).
+${GROUNDING_RULE}
+For questions about the candidate's own experience (behavioral, resume, gap, situational), the story must come from the PROFILE LINES; if nothing fits, use the closest real experience and placeholders, and for a gap say honestly what they are doing to close it.
+For concept, technical and case questions, show correct role knowledge and a clear framework; you may add one short link to real experience from the PROFILE LINES.`,
+  user: (args: { itemType: string; question: string; hint: string; jd: JDData; company: string; profile: string }) => `${jdBlock(args.jd, args.company)}
+
+QUESTION TYPE: ${args.itemType}
+QUESTION: ${args.question}
+${args.hint ? `Context: ${args.hint}\n` : ""}
+PROFILE LINES:
+${args.profile}
+
+Return JSON:
+{"structure": the structure used, e.g. "STAR" or "Define, explain, apply" or "Clarify, framework, analysis, recommendation",
+ "sections": [{"label": short section name (e.g. "Situation", "Definition", "Recommendation"), "text": what the candidate says, 1 to 4 sentences, first person, with NO line refs in the text}] (3 to 6 sections),
+ "why_it_works": [2 or 3 short reasons this answer scores well],
+ "source_refs": [profile line refs used], "placeholders": [each bracketed placeholder you used]}`,
 };
 
 export const conceptNames = (c: Concepts) => c.topics.flatMap((t) => t.items.map((i) => i.name));

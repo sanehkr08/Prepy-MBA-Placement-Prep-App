@@ -170,6 +170,17 @@ export const PracticeScoreSchema = z.object({
 });
 export type PracticeScore = z.infer<typeof PracticeScoreSchema>;
 
+/* ---------- Model answer (P11) ---------- */
+
+export const ModelAnswerSchema = z.object({
+  structure: z.string().default(""),
+  sections: z.array(z.object({ label: z.string(), text: z.string() })),
+  why_it_works: z.array(z.string()).default([]),
+  source_refs: z.array(z.string()).default([]),
+  placeholders: z.array(z.string()).default([]),
+});
+export type ModelAnswer = z.infer<typeof ModelAnswerSchema>;
+
 /* ---------- Kit section names ---------- */
 
 export const KIT_SECTIONS = ["concepts", "questions", "cases", "situational"] as const;
