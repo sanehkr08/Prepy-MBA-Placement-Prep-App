@@ -13,7 +13,7 @@ Prepy is a GenAI interview-prep web app for MBA placements. The user uploads a r
 
 The MVP has a single user (the owner). No login, no multi-user accounts.
 
-Full spec: `docs/PRD.md`. Screen designs: `docs/mockups/` (screenshots of the approved mockups).
+Full spec: the Prepy PRD doc in the claude.ai Project (export it as Markdown to `docs/PRD.md` to keep a copy in the repo). Decisions: `docs/decision-log.md`. Screen designs: `docs/mockups/` (screenshots of the approved mockups).
 
 ## 2. Non-negotiable product rules
 
@@ -29,7 +29,7 @@ Full spec: `docs/PRD.md`. Screen designs: `docs/mockups/` (screenshots of the ap
 |---|---|
 | Framework | Next.js 16 (App Router) + TypeScript. Next 16 has breaking changes: read `node_modules/next/dist/docs/` before using an unfamiliar API. Route handler `params` is a Promise. |
 | Styling | Tailwind CSS; design tokens in section 5 |
-| LLM | Anthropic API through `@anthropic-ai/sdk`, wrapped in `src/lib/llm.ts` so the provider can be swapped. Model from env `LLM_MODEL` |
+| LLM | `src/lib/llm.ts` supports three providers: **Gemini** (default, free tier, REST via fetch), **xAI Grok** (OpenAI-compatible REST) and **Anthropic** (`@anthropic-ai/sdk`). Chosen by `LLM_PROVIDER` or by whichever key is set; when several keys are set the others are fallbacks (tried in order gemini → xai → anthropic if the first fails). `LLM_MODEL` overrides the first provider's model; `GEMINI_MODEL` / `XAI_MODEL` / `ANTHROPIC_MODEL` override per provider. Free tiers are rate-limited: on HTTP 429 it falls back at once, or waits and retries once when no fallback is set |
 | Validation | Zod schema for every LLM output; one automatic retry on invalid JSON |
 | PDF text | `unpdf` |
 | DOCX text | `mammoth` |
@@ -121,9 +121,14 @@ prepy/
 ## 8. Environment variables
 
 ```
-ANTHROPIC_API_KEY=
-LLM_MODEL=claude-sonnet-5-5
+GEMINI_API_KEY=          # free key from https://aistudio.google.com/apikey (default provider)
+# XAI_API_KEY=           # optional, Grok (fallback when Gemini fails)
+# ANTHROPIC_API_KEY=     # optional, Claude
+# LLM_PROVIDER=          # gemini | xai | anthropic (auto from the key set)
+# LLM_MODEL=             # override the default model (gemini-flash-latest, grok-4.3, claude-sonnet-5-5)
 ```
+
+Free-tier note: on Gemini's free tier, Google may use prompts and outputs to improve its products. The resume text is sent to the model.
 
 ## 9. Out of scope for the MVP
 

@@ -27,7 +27,7 @@ process.env.PREPY_DATA_DIR = EVAL_DATA;
 
 async function main() {
   const { store } = await import("../src/lib/store");
-  const { callLLM } = await import("../src/lib/llm");
+  const { callLLM, activeProvider, activeModel } = await import("../src/lib/llm");
   const { P2, P9 } = await import("../src/lib/prompts");
   const { JDSchema, PracticeScoreSchema } = await import("../src/lib/schemas");
   const prep = await import("../src/lib/prep");
@@ -187,7 +187,7 @@ async function main() {
   const date = new Date().toISOString().slice(0, 10);
   const md = `# Prepy eval results · ${date}
 
-Model: ${process.env.LLM_MODEL || "claude-sonnet-5-5"} · Prompt versions: P2–P9 v1 · JDs tested: ${rows.length}
+Provider: ${activeProvider()} · Model: ${activeModel()} · Prompt versions: P2–P9 v1 · JDs tested: ${rows.length}
 
 ## Summary
 

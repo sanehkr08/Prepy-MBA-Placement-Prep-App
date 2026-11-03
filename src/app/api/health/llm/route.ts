@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { callLLM, errorResponse } from "@/lib/llm";
+import { callLLM, errorResponse, lastProvider, activeModel, providerChain } from "@/lib/llm";
 
 /** Quick check that the API key and model work: open /api/health/llm in the browser. */
 export async function GET() {
@@ -12,7 +12,8 @@ export async function GET() {
       schema: z.object({ ok: z.boolean(), message: z.string() }),
       maxTokens: 100,
     });
-    return Response.json({ ...out, model: process.env.LLM_MODEL || "claude-sonnet-5-5" });
+    const provider = lastProvider();
+    return Response.json({ ...out, provider, model: activeModel(provider), chain: providerChain() });
   } catch (err) {
     return errorResponse(err);
   }

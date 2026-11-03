@@ -11,13 +11,15 @@ Built as an MBA product-management project. Spec: the Prepy PRD. Rules for AI co
 
 ## Run it on your computer (Windows, PowerShell)
 
-You need Node.js 20 or newer (`node -v` to check) and an Anthropic API key.
+You need Node.js 20 or newer (`node -v` to check; install the LTS from https://nodejs.org if missing) and one API key. **Gemini has a free tier**: create a key at https://aistudio.google.com/apikey (sign in with Google, click *Create API key*). Grok (`XAI_API_KEY`) and Claude (`ANTHROPIC_API_KEY`) also work but are paid.
+
+Easiest: double-click `setup.bat`. It installs packages, creates `.env.local`, makes the first Git commit and opens VS Code. Or do it by hand:
 
 ```powershell
 cd "$HOME\projects\prepy"
 npm install
 copy .env.example .env.local
-code .env.local      # paste your key after ANTHROPIC_API_KEY=
+code .env.local      # paste your key after GEMINI_API_KEY=
 npm run dev
 ```
 
@@ -25,7 +27,9 @@ Open http://localhost:3000 in **Chrome or Edge** (needed for voice input).
 
 Check the key works: open http://localhost:3000/api/health/llm. You should see `"ok": true`.
 
-If you see "Model … was not found", set `LLM_MODEL` in `.env.local` to a model your key can use and restart `npm run dev`.
+If you see "Model … was not found", set `LLM_MODEL` in `.env.local` to a Flash model listed in Google AI Studio and restart `npm run dev`.
+
+Free tier limits: Gemini's free tier allows only a few requests per minute. Building a full prep kit makes 4–6 calls, so the first load can take a minute; Prepy waits and retries automatically when it hits the limit. On the free tier, Google may use your prompts (including resume text) to improve its products.
 
 ## Put it on GitHub (first time)
 

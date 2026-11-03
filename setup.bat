@@ -65,7 +65,7 @@ if errorlevel 1 (
 
 echo.
 echo ===== Next steps =====
-echo 1. In VS Code, paste your key after ANTHROPIC_API_KEY= in .env.local and save.
+echo 1. Get a free Gemini key at https://aistudio.google.com/apikey then paste it after GEMINI_API_KEY= in .env.local and save.
 echo 2. In the VS Code terminal (Ctrl + `), run:  npm run dev
 echo 3. Open http://localhost:3000 in Chrome or Edge.
 echo 4. To work with Claude Code, run:  claude   (in the same terminal)
