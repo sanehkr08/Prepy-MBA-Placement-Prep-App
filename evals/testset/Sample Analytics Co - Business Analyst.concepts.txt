@@ -1,0 +1,8 @@
+KPI design and metric trees
+Funnel analysis
+Cohort and retention analysis
+A/B testing and statistical significance
+SQL joins and aggregations
+Dashboard design
+Market sizing
+Root cause analysis of a metric drop

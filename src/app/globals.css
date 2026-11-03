@@ -1,0 +1,49 @@
+@import "tailwindcss";
+@import "@fontsource-variable/dm-sans";
+
+/* Prepy design tokens (see CLAUDE.md section 5) */
+@theme {
+  --color-ground: #f6f2ee;
+  --color-panel: #efe7e1;
+  --color-ink: #1c1b1f;
+  --color-muted: #5f5a57;
+  --color-pink: #f6c9c9;
+  --color-peach: #f8ddb8;
+  --color-lavender: #d9d3fa;
+  --color-mint: #c3eed9;
+  --font-sans: "DM Sans Variable", system-ui, sans-serif;
+  --radius-card: 32px;
+  --radius-panel: 40px;
+}
+
+html,
+body {
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+@keyframes prepy-pulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.skeleton {
+  animation: prepy-pulse 1.4s ease-in-out infinite;
+}

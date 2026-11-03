@@ -1,0 +1,15 @@
+SAMPLE JD (written for testing Prepy; not a real posting)
+
+Business Analyst, Consumer Tech, [City]
+
+Responsibilities
+- Define and track product and business KPIs; build dashboards for leadership.
+- Write SQL to pull and clean data; analyse funnels, cohorts and retention.
+- Design and read A/B tests; size opportunities and present recommendations.
+- Work with product, marketing and operations teams to turn questions into analyses.
+
+Requirements
+- MBA or degree in a quantitative field.
+- SQL and Excel required; Python or R a plus.
+- Experience with a BI tool (Power BI or Tableau).
+- Clear written and verbal communication.
