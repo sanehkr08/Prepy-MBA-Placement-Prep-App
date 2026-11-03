@@ -11,7 +11,7 @@ Built as an MBA product-management project. Spec: the Prepy PRD. Rules for AI co
 
 ## Run it on your computer (Windows, PowerShell)
 
-You need Node.js 20 or newer (`node -v` to check; install the LTS from https://nodejs.org if missing) and one API key. **Gemini has a free tier**: create a key at https://aistudio.google.com/apikey (sign in with Google, click *Create API key*). Grok (`XAI_API_KEY`) and Claude (`ANTHROPIC_API_KEY`) also work but are paid.
+You need Node.js 20 or newer (`node -v` to check; install the LTS from https://nodejs.org if missing) and one API key. **Gemini has a free tier**: create a key at https://aistudio.google.com/apikey (sign in with Google, click *Create API key*). **Groq** (not Grok) also has a free tier: create a key at https://console.groq.com/keys and paste it after `GROQ_API_KEY=`. With both set, Groq takes over when Gemini hits its limit. Grok (`XAI_API_KEY`) and Claude (`ANTHROPIC_API_KEY`) also work but are paid.
 
 Easiest: double-click `setup.bat`. It installs packages, creates `.env.local`, makes the first Git commit and opens VS Code. Or do it by hand:
 

@@ -29,7 +29,7 @@ Full spec: the Prepy PRD doc in the claude.ai Project (export it as Markdown to 
 |---|---|
 | Framework | Next.js 16 (App Router) + TypeScript. Next 16 has breaking changes: read `node_modules/next/dist/docs/` before using an unfamiliar API. Route handler `params` is a Promise. |
 | Styling | Tailwind CSS; design tokens in section 5 |
-| LLM | `src/lib/llm.ts` supports three providers: **Gemini** (default, free tier, REST via fetch), **xAI Grok** (OpenAI-compatible REST) and **Anthropic** (`@anthropic-ai/sdk`). Chosen by `LLM_PROVIDER` or by whichever key is set; when several keys are set the others are fallbacks (tried in order gemini → xai → anthropic if the first fails). `LLM_MODEL` overrides the first provider's model; `GEMINI_MODEL` / `XAI_MODEL` / `ANTHROPIC_MODEL` override per provider. Free tiers are rate-limited: on HTTP 429 it falls back at once, or waits and retries once when no fallback is set |
+| LLM | `src/lib/llm.ts` supports four providers: **Gemini** (default, free tier, REST via fetch), **Groq** (free tier, open models, OpenAI-compatible REST; not Grok), **xAI Grok** (paid, OpenAI-compatible REST) and **Anthropic** (`@anthropic-ai/sdk`). Chosen by `LLM_PROVIDER` or by whichever key is set; when several keys are set the others are fallbacks (tried in order gemini → groq → xai → anthropic if the first fails). `LLM_MODEL` overrides the first provider's model; `GEMINI_MODEL` / `GROQ_MODEL` / `XAI_MODEL` / `ANTHROPIC_MODEL` override per provider. Free tiers are rate-limited: on HTTP 429 it falls back at once, or waits and retries once when no fallback is set |
 | Validation | Zod schema for every LLM output; one automatic retry on invalid JSON |
 | PDF text | `unpdf` |
 | DOCX text | `mammoth` |
@@ -122,7 +122,8 @@ prepy/
 
 ```
 GEMINI_API_KEY=          # free key from https://aistudio.google.com/apikey (default provider)
-# XAI_API_KEY=           # optional, Grok (fallback when Gemini fails)
+GROQ_API_KEY=            # free key from https://console.groq.com/keys (fallback when Gemini fails)
+# XAI_API_KEY=           # optional, Grok (paid)
 # ANTHROPIC_API_KEY=     # optional, Claude
 # LLM_PROVIDER=          # gemini | xai | anthropic (auto from the key set)
 # LLM_MODEL=             # override the default model (gemini-flash-latest, grok-4.3, claude-sonnet-5-5)

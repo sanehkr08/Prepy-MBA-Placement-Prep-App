@@ -4,10 +4,11 @@
  *
  * Providers (pick with LLM_PROVIDER in .env.local, or it is chosen from the key you set):
  *   gemini     GEMINI_API_KEY      free tier via Google AI Studio (default model: gemini-flash-latest)
+ *   groq       GROQ_API_KEY        Groq (not Grok), free tier, open models (default model: openai/gpt-oss-120b)
  *   xai        XAI_API_KEY         Grok, paid / promotional credits (default model: grok-4.3)
  *   anthropic  ANTHROPIC_API_KEY   Claude, paid (default model: claude-sonnet-5-5)
- * LLM_MODEL overrides the model for the chosen provider; GEMINI_MODEL / XAI_MODEL /
- * ANTHROPIC_MODEL override per provider.
+ * LLM_MODEL overrides the model for the chosen provider; GEMINI_MODEL / GROQ_MODEL /
+ * XAI_MODEL / ANTHROPIC_MODEL override per provider.
  *
  * Fallback: when more than one key is set, the chosen provider goes first and the others
  * (in the order above) take over if it fails, e.g. when Gemini's free tier hits its rate limit.
@@ -26,27 +27,27 @@ export class LLMError extends Error {
   }
 }
 
-type Provider = "gemini" | "xai" | "anthropic";
+type Provider = "gemini" | "groq" | "xai" | "anthropic";
 
 const DEFAULT_MODELS: Record<Provider, string> = {
   gemini: "gemini-flash-latest",
+  groq: "openai/gpt-oss-120b",
   xai: "grok-4.3",
   anthropic: "claude-sonnet-5-5",
 };
 
+// Order matters: free providers first, so they lead the fallback chain.
 const KEY_VARS: Record<Provider, string> = {
   gemini: "GEMINI_API_KEY",
+  groq: "GROQ_API_KEY",
   xai: "XAI_API_KEY",
   anthropic: "ANTHROPIC_API_KEY",
 };
 
 export function activeProvider(): Provider {
-  const p = (process.env.LLM_PROVIDER || "").toLowerCase().trim();
-  if (p === "gemini" || p === "xai" || p === "anthropic") return p;
-  if (process.env.GEMINI_API_KEY) return "gemini";
-  if (process.env.XAI_API_KEY) return "xai";
-  if (process.env.ANTHROPIC_API_KEY) return "anthropic";
-  return "gemini";
+  const p = (process.env.LLM_PROVIDER || "").toLowerCase().trim() as Provider;
+  if (p in KEY_VARS) return p;
+  return (Object.keys(KEY_VARS) as Provider[]).find((k) => process.env[KEY_VARS[k]]) ?? "gemini";
 }
 
 /** The chosen provider first, then every other provider that has a key set. */
@@ -140,15 +141,29 @@ async function callGemini(system: string, user: string, maxTokens: number): Prom
   };
 }
 
-async function callXAI(system: string, user: string, maxTokens: number): Promise<RawResult> {
-  const key = requireKey("xai");
-  const base = process.env.XAI_BASE_URL || "https://api.x.ai/v1";
-  const res = await fetch(`${base}/chat/completions`, {
+const OPENAI_COMPAT = {
+  groq: { label: "Groq", base: () => process.env.GROQ_BASE_URL || "https://api.groq.com/openai/v1" },
+  xai: { label: "xAI", base: () => process.env.XAI_BASE_URL || "https://api.x.ai/v1" },
+};
+
+/** Groq and xAI both speak the OpenAI chat-completions format. */
+async function callOpenAICompat(
+  provider: keyof typeof OPENAI_COMPAT,
+  system: string,
+  user: string,
+  maxTokens: number,
+): Promise<RawResult> {
+  const key = requireKey(provider);
+  const { label, base } = OPENAI_COMPAT[provider];
+  const res = await fetch(`${base()}/chat/completions`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({
-      model: activeModel("xai"),
-      max_tokens: maxTokens,
+      model: activeModel(provider),
+      // Groq's default gpt-oss model reasons before answering: leave room for that, keep it short.
+      ...(activeModel(provider).startsWith("openai/gpt-oss")
+        ? { max_tokens: Math.max(maxTokens, 2048), reasoning_effort: "low" }
+        : { max_tokens: maxTokens }),
       temperature: 0.4,
       response_format: { type: "json_object" },
       messages: [
@@ -164,7 +179,7 @@ async function callXAI(system: string, user: string, maxTokens: number): Promise
   };
   if (!res.ok) {
     const msg = typeof body.error === "string" ? body.error : body.error?.message;
-    throw new HTTPError(res.status, msg || `xAI error ${res.status}`, Number(res.headers.get("retry-after")) || 0);
+    throw new HTTPError(res.status, msg || `${label} error ${res.status}`, Number(res.headers.get("retry-after")) || 0);
   }
   return {
     text: body.choices?.[0]?.message?.content ?? "",
@@ -195,7 +210,12 @@ async function callAnthropic(system: string, user: string, maxTokens: number): P
   }
 }
 
-const PROVIDER_FNS = { gemini: callGemini, xai: callXAI, anthropic: callAnthropic };
+const PROVIDER_FNS: Record<Provider, (system: string, user: string, maxTokens: number) => Promise<RawResult>> = {
+  gemini: callGemini,
+  groq: (s, u, m) => callOpenAICompat("groq", s, u, m),
+  xai: (s, u, m) => callOpenAICompat("xai", s, u, m),
+  anthropic: callAnthropic,
+};
 
 async function callOne(provider: Provider, system: string, user: string, maxTokens: number, canFallBack: boolean) {
   const fn = PROVIDER_FNS[provider];
