@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { FileText, Target, BookOpen, Mic, AudioLines, LoaderCircle } from "lucide-react";
+import { FileText, Target, BookOpen, Mic, AudioLines, LoaderCircle, ArrowLeft, ArrowRight } from "lucide-react";
 import { lastJD } from "@/lib/client";
 
 export type Pastel = "pink" | "peach" | "lavender" | "mint" | "white";
@@ -52,14 +52,18 @@ function RailLink({
   );
 }
 
-export function SideRail({ active, jdId }: { active: RailKey; jdId?: string | null }) {
+/** The page's JD, or the last opened one (read after mount: localStorage is not on the server). */
+function useStepJD(jdId?: string | null) {
   const [fallback, setFallback] = useState<string | null>(null);
   useEffect(() => {
-    // Read the last opened JD after mount (localStorage is not available on the server).
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (!jdId) setFallback(lastJD());
   }, [jdId]);
-  const id = jdId ?? fallback;
+  return jdId ?? fallback;
+}
+
+export function SideRail({ active, jdId }: { active: RailKey; jdId?: string | null }) {
+  const id = useStepJD(jdId);
   return (
     <nav aria-label="Prep steps" className="flex flex-row items-center gap-3 px-4 pt-6 md:w-[88px] md:flex-none md:flex-col md:px-0 md:pt-7">
       <Link
@@ -89,6 +93,40 @@ export function SideRail({ active, jdId }: { active: RailKey; jdId?: string | nu
   );
 }
 
+const STEPS: { key: RailKey; label: string; href: (id: string) => string }[] = [
+  { key: "setup", label: "Resume and JD", href: () => "/" },
+  { key: "fit", label: "Fit map", href: (id) => `/fit/${id}` },
+  { key: "kit", label: "Prep kit", href: (id) => `/kit/${id}` },
+  { key: "practice", label: "Practice", href: (id) => `/practice/${id}` },
+];
+
+/** Back / Next buttons between the steps of the flow. */
+export function StepNav({ active, jdId }: { active: RailKey; jdId?: string | null }) {
+  const id = useStepJD(jdId);
+  const i = STEPS.findIndex((s) => s.key === active);
+  if (i === -1) return null;
+  const back = STEPS[i - 1];
+  // Every step after setup needs a JD.
+  const next = id ? STEPS[i + 1] : undefined;
+  const pill = "inline-flex min-h-[44px] items-center gap-2 rounded-full px-4 text-sm font-semibold transition";
+  return (
+    <nav aria-label="Step navigation" className="mb-6 flex flex-wrap items-center justify-between gap-3">
+      {back ? (
+        <Link href={back.href(id ?? "")} className={`${pill} bg-white text-ink hover:bg-panel`}>
+          <ArrowLeft size={16} aria-hidden /> Back: {back.label}
+        </Link>
+      ) : (
+        <span />
+      )}
+      {next ? (
+        <Link href={next.href(id!)} className={`${pill} bg-ink text-white hover:bg-black`}>
+          Next: {next.label} <ArrowRight size={16} aria-hidden />
+        </Link>
+      ) : null}
+    </nav>
+  );
+}
+
 export function AppShell({
   active,
   jdId,
@@ -103,7 +141,10 @@ export function AppShell({
   return (
     <div className="flex min-h-screen flex-col bg-ground md:flex-row md:flex-wrap">
       <SideRail active={active} jdId={jdId} />
-      <main className="min-w-0 flex-[999_1_560px] px-5 pb-16 pt-8 md:px-8 md:pt-10">{children}</main>
+      <main className="min-w-0 flex-[999_1_560px] px-5 pb-16 pt-8 md:px-8 md:pt-10">
+        <StepNav active={active} jdId={jdId} />
+        {children}
+      </main>
       {panel ? (
         <aside className="m-4 flex min-w-0 flex-[1_1_320px] flex-col gap-4 self-start rounded-[40px] bg-panel px-6 py-7 md:my-5 md:ml-0 md:mr-5">
           {panel}

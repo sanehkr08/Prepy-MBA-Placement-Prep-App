@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { Briefcase, Check, Mic, Square } from "lucide-react";
+import { Briefcase, Check, Mic, Square, Undo2, Redo2 } from "lucide-react";
 import { api, rememberJD } from "@/lib/client";
 import type { PracticeScore } from "@/lib/schemas";
-import { useDictation } from "@/components/hooks";
+import { useDictation, useUndoableText } from "@/components/hooks";
 import {
   AppShell,
   PageTitle,
@@ -49,13 +49,17 @@ function PracticeInner() {
   const router = useRouter();
   const [queue, setQueue] = useState<QueueResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [answer, setAnswer] = useState("");
+  const text = useUndoableText();
+  const { value: answer, set: setAnswer, reset: resetAnswer } = text;
   const [usedVoice, setUsedVoice] = useState(false);
   const [scoring, setScoring] = useState(false);
   const [result, setResult] = useState<PracticeScore | null>(null);
   const [scoreError, setScoreError] = useState<string | null>(null);
 
-  const onDictated = useCallback((t: string) => setAnswer(t), []);
+  const onDictated = useCallback(
+    (t: string, phraseDone: boolean) => setAnswer(t, phraseDone ? "phrase" : "interim"),
+    [setAnswer],
+  );
   const dict = useDictation(onDictated);
 
   const load = useCallback(() => {
@@ -80,10 +84,20 @@ function PracticeInner() {
   const [shownId, setShownId] = useState<string | null>(null);
   if (current && current.id !== shownId) {
     setShownId(current.id);
-    setAnswer("");
+    resetAnswer("");
     setResult(null);
     setScoreError(null);
     setUsedVoice(false);
+  }
+
+  // Undo/redo stop the mic first, so words still being recognised are not added straight back.
+  function undo() {
+    if (dict.listening) dict.abort();
+    text.undo();
+  }
+  function redo() {
+    if (dict.listening) dict.abort();
+    text.redo();
   }
 
   function goTo(id: string) {
@@ -308,18 +322,50 @@ function PracticeInner() {
           ) : null}
 
           <div className="mt-4 flex flex-col gap-2">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <label htmlFor="answer" className="text-sm font-semibold">
                 Your answer{usedVoice ? " · transcript" : ""}
               </label>
-              {usedVoice ? <span className="text-[13px] text-muted">Edit anything the mic got wrong before scoring</span> : null}
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={undo}
+                  disabled={!text.canUndo}
+                  title="Undo the last phrase or edit (Ctrl+Z)"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-white px-4 text-sm font-semibold text-ink transition hover:bg-panel disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Undo2 size={16} aria-hidden /> Undo
+                </button>
+                <button
+                  type="button"
+                  onClick={redo}
+                  disabled={!text.canRedo}
+                  title="Redo (Ctrl+Y)"
+                  className="inline-flex min-h-[44px] items-center gap-1.5 rounded-full bg-white px-4 text-sm font-semibold text-ink transition hover:bg-panel disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  <Redo2 size={16} aria-hidden /> Redo
+                </button>
+              </div>
             </div>
+            {usedVoice ? <span className="text-[13px] text-muted">Edit anything the mic got wrong before scoring. Undo removes the last phrase.</span> : null}
             <textarea
               id="answer"
               rows={9}
               className={`${fieldInput} rounded-[28px] bg-white! p-4.5`}
               value={answer}
-              onChange={(e) => setAnswer(e.target.value)}
+              onChange={(e) => setAnswer(e.target.value, "type")}
+              onKeyDown={(e) => {
+                // Use the same history as the buttons (the browser's own undo can't see spoken text).
+                if (!(e.ctrlKey || e.metaKey)) return;
+                const k = e.key.toLowerCase();
+                if (k === "z" && !e.shiftKey) {
+                  e.preventDefault();
+                  undo();
+                } else if (k === "y" || (k === "z" && e.shiftKey)) {
+                  e.preventDefault();
+                  redo();
+                }
+              }}
               placeholder="Type your answer, or press “Speak your answer”."
             />
           </div>

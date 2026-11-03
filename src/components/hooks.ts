@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { api } from "@/lib/client";
 import type { Profile } from "@/lib/schemas";
 
@@ -49,7 +49,7 @@ function getRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
  * Dictation: streams speech into text. `base` is the text already in the box;
  * new speech is appended after it. The transcript stays editable.
  */
-export function useDictation(onText: (text: string) => void) {
+export function useDictation(onText: (text: string, phraseDone: boolean) => void) {
   const [supported, setSupported] = useState(true);
   const [listening, setListening] = useState(false);
   const [seconds, setSeconds] = useState(0);
@@ -100,7 +100,8 @@ export function useDictation(onText: (text: string) => void) {
         if (r.isFinal) finalRef.current += r[0].transcript + " ";
         else interim += r[0].transcript;
       }
-      onTextRef.current((baseRef.current + finalRef.current + interim).replace(/\s+/g, " ").trimStart());
+      // phraseDone: the recogniser finished a phrase (no words still being guessed).
+      onTextRef.current((baseRef.current + finalRef.current + interim).replace(/\s+/g, " ").trimStart(), !interim);
     };
     rec.onerror = (e) => {
       if (e.error === "not-allowed" || e.error === "service-not-allowed") {
@@ -139,5 +140,95 @@ export function useDictation(onText: (text: string) => void) {
     setListening(false);
   }, []);
 
-  return { supported, listening, seconds, error, start, stop };
+  /** Stop at once and drop words still being recognised (used by Undo, so they are not added back). */
+  const abort = useCallback(() => {
+    wantRef.current = false;
+    recRef.current?.abort();
+    setListening(false);
+  }, []);
+
+  return { supported, listening, seconds, error, start, stop, abort };
+}
+
+/* ---------------- Undo / redo for the answer box ---------------- */
+
+type HistoryState = { value: string; stack: string[]; index: number };
+type HistoryAction =
+  | { type: "set"; value: string; commit: boolean }
+  | { type: "commit" }
+  | { type: "undo" }
+  | { type: "redo" }
+  | { type: "reset"; value: string };
+
+const MAX_STEPS = 100;
+
+function commitValue(h: HistoryState): HistoryState {
+  if (h.stack[h.index] === h.value) return h;
+  // A new step drops anything that could have been redone.
+  const stack = [...h.stack.slice(0, h.index + 1), h.value].slice(-MAX_STEPS);
+  return { ...h, stack, index: stack.length - 1 };
+}
+
+function historyReducer(h: HistoryState, a: HistoryAction): HistoryState {
+  switch (a.type) {
+    case "set": {
+      const next = { ...h, value: a.value };
+      return a.commit ? commitValue(next) : next;
+    }
+    case "commit":
+      return commitValue(h);
+    case "undo": {
+      const c = commitValue(h);
+      return c.index === 0 ? c : { ...c, index: c.index - 1, value: c.stack[c.index - 1] };
+    }
+    case "redo":
+      if (h.value !== h.stack[h.index] || h.index >= h.stack.length - 1) return commitValue(h);
+      return { ...h, index: h.index + 1, value: h.stack[h.index + 1] };
+    case "reset":
+      return { value: a.value, stack: [a.value], index: 0 };
+  }
+}
+
+/**
+ * Text with undo/redo steps. Each finished spoken phrase is one step; a burst of
+ * typing becomes one step after a short pause.
+ */
+export function useUndoableText(initial = "") {
+  const [h, dispatch] = useReducer(historyReducer, { value: initial, stack: [initial], index: 0 });
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearTimer = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  useEffect(() => clearTimer, []);
+
+  /** "type": typed edit, "interim": words still being recognised, "phrase": a finished spoken phrase. */
+  const set = useCallback((value: string, kind: "type" | "interim" | "phrase") => {
+    clearTimer();
+    dispatch({ type: "set", value, commit: kind === "phrase" });
+    if (kind === "type") timer.current = setTimeout(() => dispatch({ type: "commit" }), 800);
+  }, []);
+  const undo = useCallback(() => {
+    clearTimer();
+    dispatch({ type: "undo" });
+  }, []);
+  const redo = useCallback(() => {
+    clearTimer();
+    dispatch({ type: "redo" });
+  }, []);
+  const reset = useCallback((value = "") => {
+    clearTimer();
+    dispatch({ type: "reset", value });
+  }, []);
+
+  return {
+    value: h.value,
+    set,
+    undo,
+    redo,
+    reset,
+    canUndo: h.index > 0 || h.value !== h.stack[h.index],
+    canRedo: h.value === h.stack[h.index] && h.index < h.stack.length - 1,
+  };
 }

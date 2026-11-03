@@ -29,7 +29,7 @@ Full spec: the Prepy PRD doc in the claude.ai Project (export it as Markdown to 
 |---|---|
 | Framework | Next.js 16 (App Router) + TypeScript. Next 16 has breaking changes: read `node_modules/next/dist/docs/` before using an unfamiliar API. Route handler `params` is a Promise. |
 | Styling | Tailwind CSS; design tokens in section 5 |
-| LLM | `src/lib/llm.ts` supports four providers: **Gemini** (default, free tier, REST via fetch), **Groq** (free tier, open models, OpenAI-compatible REST; not Grok), **xAI Grok** (paid, OpenAI-compatible REST) and **Anthropic** (`@anthropic-ai/sdk`). Chosen by `LLM_PROVIDER` or by whichever key is set; when several keys are set the others are fallbacks (tried in order gemini → groq → xai → anthropic if the first fails). `LLM_MODEL` overrides the first provider's model; `GEMINI_MODEL` / `GROQ_MODEL` / `XAI_MODEL` / `ANTHROPIC_MODEL` override per provider. Free tiers are rate-limited: on HTTP 429 it falls back at once, or waits and retries once when no fallback is set |
+| LLM | `src/lib/llm.ts` supports four providers: **Gemini** (default, free tier, REST via fetch), **Groq** (free tier, open models, OpenAI-compatible REST; not Grok), **xAI Grok** (paid, OpenAI-compatible REST) and **Anthropic** (`@anthropic-ai/sdk`). Chosen by `LLM_PROVIDER` or by whichever key is set; when several keys are set the others are fallbacks (tried in order gemini → groq → xai → anthropic if the first fails). `LLM_MODEL` overrides the first provider's model; `GEMINI_MODEL` / `GROQ_MODEL` / `XAI_MODEL` / `ANTHROPIC_MODEL` override per provider. Free tiers are rate-limited: on HTTP 429 it falls back at once, or waits and retries once when no fallback is set; a provider whose daily quota is used up is skipped until its retry time. Each call times out after 45 s (`LLM_TIMEOUT_MS`) and moves to the next provider. Default Gemini model is `gemini-flash-lite-latest` with `thinkingLevel: "low"` (the bigger `gemini-flash-latest` allows only ~20 free requests a day) |
 | Validation | Zod schema for every LLM output; one automatic retry on invalid JSON |
 | PDF text | `unpdf` |
 | DOCX text | `mammoth` |
@@ -57,19 +57,20 @@ prepy/
         resume/route.ts                POST upload/paste → P1 parse (not saved yet)
         profile/route.ts               GET / PUT the confirmed profile
         jd/route.ts                    GET list, POST add JD → P2 parse
-        fit/[jdId]/route.ts            GET fit map (P3), cached; ?refresh=1
+        fit/[jdId]/route.ts            GET fit map (P3), cached; ?refresh=1; then prefetches the kit in the background
         kit/[jdId]/[section]/route.ts  GET concepts | questions | cases | situational (P4–P7), cached
+        kit/[jdId]/more/route.ts       POST Generate More: new, non-repeating items for one kit tab (P10)
         kit/[jdId]/outline/route.ts    POST STAR outline for one question (P8)
         kit/[jdId]/plan/route.ts       GET / PUT study plan
         practice/[jdId]/route.ts       GET practice queue
         practice/score/route.ts        POST score an answer (P9), saves attempt
         data/route.ts                  DELETE all data
         health/llm/route.ts            GET quick API-key check
-    components/   ui.tsx (shell, rail, chips, cards, buttons), ProfileEditor.tsx, hooks.ts (useProfile, useDictation)
+    components/   ui.tsx (shell, rail, Back/Next step bar, chips, cards, buttons), ProfileEditor.tsx, hooks.ts (useProfile, useDictation, useUndoableText)
     lib/
       llm.ts            callLLM (JSON + Zod + one retry + logging), errorResponse
-      prompts.ts        P1–P9 with versions + GROUNDING_RULE
-      prep.ts           orchestration, caching, grounding guards, practice queue, study plan
+      prompts.ts        P1–P10 with versions + GROUNDING_RULE
+      prep.ts           orchestration, caching, in-flight request sharing, kit prefetch, Generate More, grounding guards, practice queue, study plan
       profile-lines.ts  numbered profile lines (ED1, EX1.B2, AC1…) used for citations
       schemas.ts        Zod schemas
       store.ts          JSON file store

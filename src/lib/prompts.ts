@@ -1,8 +1,8 @@
 /**
- * All prompts P1–P9. Bump a prompt's version when you change it, so evals can
+ * All prompts P1–P10. Bump a prompt's version when you change it, so evals can
  * compare versions (BUILD_PLAN Task 10).
  */
-import type { JDData, FitMap, Concepts } from "./schemas";
+import type { JDData, FitMap, Concepts, Questions, Cases, Situational } from "./schemas";
 
 export const GROUNDING_RULE = `GROUNDING RULE (non-negotiable):
 - Anything you say about the candidate must come from the numbered PROFILE LINES only.
@@ -191,6 +191,77 @@ Return JSON:
 {"headline": one short verdict sentence, "scores": {"structure": 1-5, "relevance": 1-5, "evidence_or_concepts": 1-5, "clarity": 1-5},
  "concepts_used": [concepts the answer used well], "concepts_missed": [important concepts it missed],
  "stronger_answer": [4 to 6 short steps of a better answer]}`,
+};
+
+/* P10 — Generate More: new items for a kit section that do not repeat what the candidate already has */
+const alreadyHave = (items: string[]) =>
+  `ALREADY IN THE KIT (do NOT repeat these or close rewordings; go deeper or cover new ground):
+${items.map((t) => `- ${t}`).join("\n")}`;
+
+export const P10 = {
+  name: "P10_generate_more",
+  version: "v1",
+  system: `You are an expert interview coach extending a candidate's prep kit for this role. Every item you add must be new: not a repeat or close rewording of what is already in the kit. Stay specific to the role family and this JD. No filler.
+${GROUNDING_RULE}`,
+  concepts: (jd: JDData, company: string, gaps: string[], have: Concepts) => `${jdBlock(jd, company)}
+
+Candidate gaps for this JD: ${gaps.length ? gaps.join("; ") : "none"}
+
+${alreadyHave(have.topics.flatMap((t) => t.items.map((c) => `${c.name} (${t.name})`)))}
+
+Add 4 to 6 NEW concepts this candidate should also study. Reuse an existing topic name when a concept fits it. Return JSON:
+{"topics": [{"name": topic name, "note": short note,
+  "items": [{"name": concept name, "what": one or two sentence plain explanation,
+             "why_it_matters": why it matters in THIS role, one sentence,
+             "priority": "High"|"Medium"|"Low", "covers_gap": boolean}]}]}`,
+  questions: (
+    jd: JDData,
+    company: string,
+    concepts: string[],
+    fit: FitMap,
+    profile: string,
+    have: Questions,
+    focus: "role" | "resume",
+  ) => `${jdBlock(jd, company)}
+
+Key concepts: ${concepts.join(", ")}
+Fit map: ${fit.items.map((i) => `${i.requirement} = ${i.label}`).join("; ")}
+
+PROFILE LINES:
+${profile}
+
+${alreadyHave(have.questions.map((q) => q.text))}
+
+${
+  focus === "resume"
+    ? `Add 5 NEW questions an interviewer would ask about this candidate's actual background (category "resume", based only on the PROFILE LINES) and about their gaps or partial matches for this JD (category "gap").`
+    : `Add 6 NEW role-knowledge or technical questions (category "role_knowledge" or "technical") an interviewer for this role would ask, tied to the key concepts.`
+}
+Return JSON:
+{"questions": [{"text": string, "category": "role_knowledge"|"technical"|"resume"|"gap",
+  "linked_concepts": [concept names], "likelihood_rank": 1 = most likely}]}`,
+  cases: (jd: JDData, company: string, concepts: string[], have: Cases) => `${jdBlock(jd, company)}
+
+Key concepts: ${concepts.join(", ")}
+
+${alreadyHave(have.cases.map((c) => `${c.title}: ${c.prompt.slice(0, 120)}`))}
+
+Write 2 NEW realistic case studies for this exact role, with a different business problem from the ones above. Return JSON:
+{"cases": [{"title": short title, "prompt": the case as the interviewer would say it (3 to 5 sentences, with any needed facts),
+  "framework": a suggested approach in one or two sentences,
+  "solution_outline": [4 to 6 steps of a strong answer],
+  "linked_concepts": [concept names]}]}`,
+  situational: (jd: JDData, company: string, have: Situational, kind: "situational" | "behavioral") => `${jdBlock(jd, company)}
+
+${alreadyHave(have[kind].map((q) => q.text))}
+
+Add 4 NEW ${
+    kind === "situational"
+      ? `situational ("What would you do if…") questions from the day-to-day reality of this role`
+      : `behavioral ("Tell me about a time…") questions for the competencies this JD needs`
+  }. Return JSON:
+{"situational": [{"text": string, "competency": string}] (${kind === "situational" ? "4 items" : "empty array"}),
+ "behavioral": [{"text": string, "competency": string}] (${kind === "behavioral" ? "4 items" : "empty array"})}`,
 };
 
 export const conceptNames = (c: Concepts) => c.topics.flatMap((t) => t.items.map((i) => i.name));

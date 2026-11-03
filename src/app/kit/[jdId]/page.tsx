@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
-import { Lightbulb, CircleHelp, Briefcase, Flag, Star, User, RefreshCw } from "lucide-react";
+import { Lightbulb, CircleHelp, Briefcase, Flag, Star, User, Plus } from "lucide-react";
 import { api, rememberJD } from "@/lib/client";
 import type { Concepts, Questions, Cases, Situational } from "@/lib/schemas";
 import { useProfile } from "@/components/hooks";
@@ -40,6 +40,14 @@ const TABS: { key: Tab; label: string; icon: React.ReactNode }[] = [
   { key: "resume", label: "Resume and gaps", icon: <User size={18} /> },
 ];
 const TOPIC_BG = ["bg-pink", "bg-peach", "bg-lavender", "bg-mint", "bg-white"];
+const MORE_NOUN: Record<Tab, string> = {
+  concepts: "concepts",
+  questions: "questions",
+  cases: "cases",
+  situational: "situational questions",
+  behavioral: "behavioral questions",
+  resume: "resume and gap questions",
+};
 
 type JDInfo = { id: string; company: string; role: string; role_family: string };
 type SectionData = { concepts?: Concepts; questions?: Questions; cases?: Cases; situational?: Situational };
@@ -116,13 +124,14 @@ export default function KitPage() {
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<{ items: { id: string; text: string }[]; done: string[] }>({ items: [], done: [] });
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
+  const [more, setMore] = useState<{ tab: Tab; state: "loading" | "done" | "error"; message: string } | null>(null);
 
   const loadSection = useCallback(
-    async (section: "concepts" | "questions" | "cases" | "situational", refresh = false) => {
+    async (section: "concepts" | "questions" | "cases" | "situational") => {
       setError(null);
       setLoading(section);
       try {
-        const r = await api<{ jd: JDInfo; data: unknown }>(`/api/kit/${jdId}/${section}${refresh ? "?refresh=1" : ""}`);
+        const r = await api<{ jd: JDInfo; data: unknown }>(`/api/kit/${jdId}/${section}`);
         setJd(r.jd);
         setSections((s) => ({ ...s, [section]: r.data }));
         const p = await api<typeof plan>(`/api/kit/${jdId}/plan`);
@@ -145,6 +154,29 @@ export default function KitPage() {
   useEffect(() => {
     if (!have && !error) void Promise.resolve().then(() => loadSection(section));
   }, [section, have, error, loadSection]);
+
+  async function generateMore() {
+    const forTab = tab;
+    setMore({ tab: forTab, state: "loading", message: "" });
+    try {
+      const r = await api<{ data: unknown; added: number }>(`/api/kit/${jdId}/more`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tab: forTab }),
+      });
+      setSections((s) => ({ ...s, [TAB_SECTION[forTab]]: r.data }));
+      setMore({
+        tab: forTab,
+        state: "done",
+        message: r.added
+          ? `Added ${r.added} new ${MORE_NOUN[forTab]} at the end.`
+          : `No new ${MORE_NOUN[forTab]} this time. Try again.`,
+      });
+      setPlan(await api<typeof plan>(`/api/kit/${jdId}/plan`));
+    } catch (e) {
+      setMore({ tab: forTab, state: "error", message: (e as Error).message });
+    }
+  }
 
   async function togglePlan(id: string) {
     const done = plan.done.includes(id) ? plan.done.filter((d) => d !== id) : [...plan.done, id];
@@ -226,15 +258,6 @@ export default function KitPage() {
           <SkeletonCards count={6} label="Building this part of your prep kit…" />
         ) : (
           <>
-            <div className="mb-4 flex justify-end">
-              <button
-                type="button"
-                onClick={() => loadSection(section, true)}
-                className="inline-flex min-h-[44px] items-center gap-2 rounded-full px-3 text-sm font-medium text-muted hover:text-ink"
-              >
-                <RefreshCw size={15} aria-hidden /> Regenerate
-              </button>
-            </div>
 
             {tab === "concepts" && concepts ? (
               <div className="flex flex-col gap-7">
@@ -388,6 +411,18 @@ export default function KitPage() {
                   ))}
               </ol>
             ) : null}
+
+            <div className="mt-6 flex flex-col items-start gap-3" aria-live="polite">
+              {more?.tab === tab && more.state === "loading" ? (
+                <Spinner label={`Generating more ${MORE_NOUN[tab]}…`} />
+              ) : (
+                <SecondaryButton onClick={generateMore} disabled={more?.state === "loading"}>
+                  <Plus size={16} aria-hidden /> Generate More
+                </SecondaryButton>
+              )}
+              {more?.tab === tab && more.state === "done" ? <p className="text-sm text-muted">{more.message}</p> : null}
+              {more?.tab === tab && more.state === "error" ? <ErrorBox message={more.message} onRetry={generateMore} /> : null}
+            </div>
           </>
         )}
       </div>

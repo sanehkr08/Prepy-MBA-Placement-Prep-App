@@ -3,7 +3,8 @@
  * retries once with the validation error, and logs tokens and latency.
  *
  * Providers (pick with LLM_PROVIDER in .env.local, or it is chosen from the key you set):
- *   gemini     GEMINI_API_KEY      free tier via Google AI Studio (default model: gemini-flash-latest)
+ *   gemini     GEMINI_API_KEY      free tier via Google AI Studio (default model: gemini-flash-lite-latest;
+ *                                  the bigger gemini-flash-latest allows only ~20 free requests a day)
  *   groq       GROQ_API_KEY        Groq (not Grok), free tier, open models (default model: openai/gpt-oss-120b)
  *   xai        XAI_API_KEY         Grok, paid / promotional credits (default model: grok-4.3)
  *   anthropic  ANTHROPIC_API_KEY   Claude, paid (default model: claude-sonnet-5-5)
@@ -30,7 +31,7 @@ export class LLMError extends Error {
 type Provider = "gemini" | "groq" | "xai" | "anthropic";
 
 const DEFAULT_MODELS: Record<Provider, string> = {
-  gemini: "gemini-flash-latest",
+  gemini: "gemini-flash-lite-latest",
   groq: "openai/gpt-oss-120b",
   xai: "grok-4.3",
   anthropic: "claude-sonnet-5-5",
@@ -99,14 +100,25 @@ class HTTPError extends Error {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// A call that hangs is cut off and handed to the next provider; the last provider gets longer.
+const TIMEOUT_MS = Number(process.env.LLM_TIMEOUT_MS) || 45_000;
+const LAST_TIMEOUT_MS = 120_000;
+
+// Providers whose daily quota ran out are skipped until Google/Groq say to retry,
+// instead of paying a failed round trip on every call.
+const coolingUntil: Partial<Record<Provider, number>> = {};
+
+type CallFn = (system: string, user: string, maxTokens: number, signal: AbortSignal) => Promise<RawResult>;
+
 /* ---------------- provider calls ---------------- */
 
-async function callGemini(system: string, user: string, maxTokens: number): Promise<RawResult> {
+async function callGemini(system: string, user: string, maxTokens: number, signal: AbortSignal): Promise<RawResult> {
   const key = requireKey("gemini");
   const model = activeModel("gemini");
   const base = process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com";
   const res = await fetch(`${base}/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
     method: "POST",
+    signal,
     headers: { "Content-Type": "application/json", "x-goog-api-key": key },
     body: JSON.stringify({
       systemInstruction: { parts: [{ text: system }] },
@@ -116,6 +128,8 @@ async function callGemini(system: string, user: string, maxTokens: number): Prom
         temperature: 0.4,
         // Flash models may "think" before answering; leave room for that plus the JSON.
         maxOutputTokens: Math.max(maxTokens * 2, 8192),
+        // Gemini 3 models: keep thinking short, it is most of the wait. (2.x models reject this field.)
+        ...(/gemini-2\./.test(model) ? {} : { thinkingConfig: { thinkingLevel: "low" } }),
       },
     }),
   });
@@ -152,11 +166,13 @@ async function callOpenAICompat(
   system: string,
   user: string,
   maxTokens: number,
+  signal: AbortSignal,
 ): Promise<RawResult> {
   const key = requireKey(provider);
   const { label, base } = OPENAI_COMPAT[provider];
   const res = await fetch(`${base()}/chat/completions`, {
     method: "POST",
+    signal,
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
     body: JSON.stringify({
       model: activeModel(provider),
@@ -189,16 +205,19 @@ async function callOpenAICompat(
 }
 
 let anthropic: Anthropic | null = null;
-async function callAnthropic(system: string, user: string, maxTokens: number): Promise<RawResult> {
+async function callAnthropic(system: string, user: string, maxTokens: number, signal: AbortSignal): Promise<RawResult> {
   const key = requireKey("anthropic");
   anthropic = anthropic ?? new Anthropic({ apiKey: key });
   try {
-    const res = await anthropic.messages.create({
-      model: activeModel("anthropic"),
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: "user", content: user }],
-    });
+    const res = await anthropic.messages.create(
+      {
+        model: activeModel("anthropic"),
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: "user", content: user }],
+      },
+      { signal },
+    );
     return {
       text: res.content.map((b) => (b.type === "text" ? b.text : "")).join(""),
       inputTokens: res.usage?.input_tokens ?? 0,
@@ -210,31 +229,39 @@ async function callAnthropic(system: string, user: string, maxTokens: number): P
   }
 }
 
-const PROVIDER_FNS: Record<Provider, (system: string, user: string, maxTokens: number) => Promise<RawResult>> = {
+const PROVIDER_FNS: Record<Provider, CallFn> = {
   gemini: callGemini,
-  groq: (s, u, m) => callOpenAICompat("groq", s, u, m),
-  xai: (s, u, m) => callOpenAICompat("xai", s, u, m),
+  groq: (s, u, m, sig) => callOpenAICompat("groq", s, u, m, sig),
+  xai: (s, u, m, sig) => callOpenAICompat("xai", s, u, m, sig),
   anthropic: callAnthropic,
 };
 
+const isTimeout = (err: unknown) => err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
+
 async function callOne(provider: Provider, system: string, user: string, maxTokens: number, canFallBack: boolean) {
   const fn = PROVIDER_FNS[provider];
+  const timeout = canFallBack ? TIMEOUT_MS : LAST_TIMEOUT_MS;
   try {
-    return await fn(system, user, maxTokens);
+    return await fn(system, user, maxTokens, AbortSignal.timeout(timeout));
   } catch (err) {
-    // Free tiers allow only a few requests per minute: wait once and retry on 429,
-    // unless another provider can take over straight away.
-    if (err instanceof HTTPError && err.status === 429 && !canFallBack) {
-      const wait = Math.min(Math.max(err.retryAfterSec, 15), 45);
-      await sleep(wait * 1000);
-      return fn(system, user, maxTokens);
+    if (err instanceof HTTPError && err.status === 429) {
+      // A long retry delay means the daily quota is gone: stop asking this provider for now.
+      if (err.retryAfterSec > 60) coolingUntil[provider] = Date.now() + err.retryAfterSec * 1000;
+      // Free tiers allow only a few requests per minute: wait once and retry,
+      // unless another provider can take over straight away.
+      else if (!canFallBack) {
+        await sleep(Math.max(err.retryAfterSec, 10) * 1000);
+        return fn(system, user, maxTokens, AbortSignal.timeout(timeout));
+      }
     }
     throw err;
   }
 }
 
 async function callProvider(system: string, user: string, maxTokens: number): Promise<RawResult> {
-  const chain = providerChain();
+  const all = providerChain();
+  const ready = all.filter((p) => (coolingUntil[p] ?? 0) < Date.now());
+  const chain = ready.length ? ready : all;
   for (let i = 0; ; i++) {
     const provider = chain[i];
     const canFallBack = i < chain.length - 1;
@@ -243,8 +270,12 @@ async function callProvider(system: string, user: string, maxTokens: number): Pr
       lastUsed = provider;
       return raw;
     } catch (err) {
-      if (!canFallBack) throw err instanceof HTTPError ? friendlyHTTPError(err, provider) : err;
-      const reason = err instanceof Error ? err.message : String(err);
+      if (!canFallBack) {
+        if (err instanceof HTTPError) throw friendlyHTTPError(err, provider);
+        if (isTimeout(err)) throw new LLMError(`${provider} timed out`, "The AI took too long to answer. Please try again.", 504);
+        throw err;
+      }
+      const reason = isTimeout(err) ? "timed out" : err instanceof Error ? err.message : String(err);
       console.warn(`[llm] ${provider} failed (${reason.slice(0, 200)}); falling back to ${chain[i + 1]}`);
     }
   }
@@ -261,7 +292,9 @@ function friendlyHTTPError(err: HTTPError, provider: Provider): LLMError {
         : err.status === 404
           ? `Model "${model}" was not found for ${provider}. Set ${keyVar.replace("_API_KEY", "")}_MODEL in .env.local to a model your key can use.`
           : err.status === 429
-            ? "Free-tier rate limit reached. Wait a minute and try again (or check your daily quota in Google AI Studio)."
+            ? err.retryAfterSec > 60
+              ? `The free daily limit for ${provider} is used up. Add another provider's key in .env.local, or try again tomorrow.`
+              : "Free-tier rate limit reached. Wait a minute and try again."
             : `The AI service returned an error (${err.status}). Try again.`;
   return new LLMError(err.message, msg, err.status);
 }

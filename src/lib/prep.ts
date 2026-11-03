@@ -19,7 +19,7 @@ import {
   type Outline,
   type KitSection,
 } from "./schemas";
-import { P3, P4, P5, P6, P7, P8, conceptNames } from "./prompts";
+import { P3, P4, P5, P6, P7, P8, P10, conceptNames } from "./prompts";
 import { profileLines, linesAsPrompt } from "./profile-lines";
 
 export function requireProfile() {
@@ -34,9 +34,24 @@ export function requireJD(jdId: string) {
   return jd;
 }
 
+// One generation per key at a time: a second request for the same thing (double click,
+// background prefetch, React re-render) waits for the first instead of paying for another call.
+const inFlight = new Map<string, Promise<unknown>>();
+function once<T>(key: string, run: () => Promise<T>): Promise<T> {
+  const running = inFlight.get(key);
+  if (running) return running as Promise<T>;
+  const p = run().finally(() => inFlight.delete(key));
+  inFlight.set(key, p);
+  return p;
+}
+
 export async function ensureFit(jdId: string, force = false): Promise<FitMap> {
   const cached = store.getFitMap(jdId);
   if (cached && !force) return cached;
+  return once(`fit:${jdId}`, () => generateFit(jdId));
+}
+
+async function generateFit(jdId: string): Promise<FitMap> {
   const jd = requireJD(jdId);
   const profile = requireProfile();
   const lines = profileLines(profile.data);
@@ -125,7 +140,103 @@ async function generate(jdId: string, section: KitSection): Promise<unknown> {
 export async function ensureSection(jdId: string, section: KitSection, force = false) {
   const cached = store.getKit(jdId, section);
   if (cached && !force) return cached.data;
-  return generate(jdId, section);
+  return once(`kit:${jdId}:${section}`, () => generate(jdId, section));
+}
+
+/** Build the kit sections one by one in the background, so they are ready when opened. */
+export async function prefetchKit(jdId: string) {
+  for (const section of ["concepts", "situational", "cases", "questions"] as const) {
+    try {
+      await ensureSection(jdId, section);
+    } catch (err) {
+      console.warn(`[prefetch] ${section} failed: ${err instanceof Error ? err.message : err}`);
+      return;
+    }
+  }
+}
+
+/* ---------- Generate More: add new items to a section without repeating ---------- */
+
+export const MORE_TABS = ["concepts", "questions", "cases", "situational", "behavioral", "resume"] as const;
+export type MoreTab = (typeof MORE_TABS)[number];
+export const MORE_SECTION: Record<MoreTab, KitSection> = {
+  concepts: "concepts",
+  questions: "questions",
+  cases: "cases",
+  situational: "situational",
+  behavioral: "situational",
+  resume: "questions",
+};
+
+const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+export async function generateMore(jdId: string, tab: MoreTab): Promise<{ data: unknown; added: number }> {
+  return once(`more:${jdId}:${tab}`, async () => {
+    const section = MORE_SECTION[tab];
+    const current = await ensureSection(jdId, section);
+    const jd = requireJD(jdId);
+    const profile = requireProfile();
+    const lines = linesAsPrompt(profileLines(profile.data));
+    const base = { name: P10.name, version: P10.version, system: P10.system };
+    let added = 0;
+    let data: unknown;
+
+    if (section === "concepts") {
+      const cur = current as Concepts;
+      const fit = await ensureFit(jdId);
+      const gaps = fit.items.filter((i) => i.label !== "Strong").map((i) => i.requirement);
+      const more = await callLLM({ ...base, user: P10.concepts(jd.data, jd.company, gaps, cur), schema: ConceptsSchema });
+      const seen = new Set(cur.topics.flatMap((t) => t.items.map((c) => norm(c.name))));
+      // Append so existing ids (c-topic-item) used by practice and the study plan stay stable.
+      const topics = cur.topics.map((t) => ({ ...t, items: [...t.items] }));
+      for (const t of more.topics) {
+        const items = t.items.filter((c) => !seen.has(norm(c.name)) && seen.add(norm(c.name)));
+        if (!items.length) continue;
+        added += items.length;
+        const same = topics.find((x) => norm(x.name) === norm(t.name));
+        if (same) same.items.push(...items);
+        else topics.push({ ...t, items });
+      }
+      data = { topics };
+    } else if (section === "questions") {
+      const cur = current as Questions;
+      const fit = await ensureFit(jdId);
+      const concepts = (await ensureSection(jdId, "concepts")) as Concepts;
+      const focus = tab === "resume" ? "resume" : "role";
+      const more = await callLLM({
+        ...base,
+        user: P10.questions(jd.data, jd.company, conceptNames(concepts), fit, lines, cur, focus),
+        schema: QuestionsSchema,
+      });
+      const want = focus === "resume" ? ["resume", "gap"] : ["role_knowledge", "technical"];
+      const seen = new Set(cur.questions.map((q) => norm(q.text)));
+      let rank = Math.max(0, ...cur.questions.map((q) => q.likelihood_rank || 0));
+      const fresh = more.questions
+        .filter((q) => want.includes(q.category) && !seen.has(norm(q.text)) && seen.add(norm(q.text)))
+        .map((q) => ({ ...q, likelihood_rank: ++rank }));
+      added = fresh.length;
+      data = { questions: [...cur.questions, ...fresh] };
+    } else if (section === "cases") {
+      const cur = current as Cases;
+      const concepts = (await ensureSection(jdId, "concepts")) as Concepts;
+      const more = await callLLM({ ...base, user: P10.cases(jd.data, jd.company, conceptNames(concepts), cur), schema: CasesSchema });
+      const seen = new Set(cur.cases.map((c) => norm(c.title)));
+      const fresh = more.cases.filter((c) => !seen.has(norm(c.title)) && seen.add(norm(c.title)));
+      added = fresh.length;
+      data = { cases: [...cur.cases, ...fresh] };
+    } else {
+      const cur = current as Situational;
+      const kind = tab === "behavioral" ? "behavioral" : "situational";
+      const more = await callLLM({ ...base, user: P10.situational(jd.data, jd.company, cur, kind), schema: SituationalSchema });
+      const seen = new Set(cur[kind].map((q) => norm(q.text)));
+      const fresh = more[kind].filter((q) => !seen.has(norm(q.text)) && seen.add(norm(q.text)));
+      added = fresh.length;
+      data = { ...cur, [kind]: [...cur[kind], ...fresh] };
+    }
+
+    if (added) store.saveKit(jdId, section, data, `${store.getKit(jdId, section)?.prompt_version ?? "v1"}+${P10.version}`);
+    return { data: added ? data : current, added };
+  });
 }
 
 /** STAR outline for one question, cached by question text. */
