@@ -281,14 +281,12 @@ export default function KitPage() {
                           <p className="rounded-2xl bg-white/70 px-3.5 py-2.5 text-[13px]">
                             <strong className="font-semibold">Why it matters:</strong> {c.why_it_matters}
                           </p>
-                          {c.priority === "High" ? (
-                            <Link
-                              href={`/practice/${jdId}?item=c-${ti}-${ci}`}
-                              className="mt-auto inline-flex min-h-[44px] items-center self-start text-[13px] font-semibold"
-                            >
-                              Explain it in practice →
-                            </Link>
-                          ) : null}
+                          <Link
+                            href={`/practice/${jdId}?item=c-${ti}-${ci}`}
+                            className="mt-auto inline-flex min-h-[44px] items-center self-start text-[13px] font-semibold"
+                          >
+                            Explain it in practice →
+                          </Link>
                         </article>
                       ))}
                     </div>
@@ -402,11 +400,9 @@ export default function KitPage() {
                       <span className="text-xs font-bold uppercase tracking-wide">{q.category === "gap" ? "Gap question" : "Resume question"}</span>
                       <p className="text-[17px]">{q.text}</p>
                       <OutlineButton jdId={jdId} question={q.text} />
-                      {q.category === "gap" ? (
-                        <Link href={`/practice/${jdId}?item=q-${i}`} className="inline-flex min-h-[44px] items-center self-start text-[13px] font-semibold">
-                          Practise this →
-                        </Link>
-                      ) : null}
+                      <Link href={`/practice/${jdId}?item=q-${i}`} className="inline-flex min-h-[44px] items-center self-start text-[13px] font-semibold">
+                        Practise this →
+                      </Link>
                     </li>
                   ))}
               </ol>

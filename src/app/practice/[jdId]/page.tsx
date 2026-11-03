@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { Briefcase, Check, Mic, Square, Undo2, Redo2 } from "lucide-react";
+import { Briefcase, Check, Mic, Square, Undo2, Redo2, Lightbulb, CircleHelp, Flag, Star, User } from "lucide-react";
 import { api, rememberJD } from "@/lib/client";
 import type { PracticeScore } from "@/lib/schemas";
 import { useDictation, useUndoableText } from "@/components/hooks";
@@ -13,6 +13,7 @@ import {
   PanelCard,
   IconCircle,
   Badge,
+  PillChip,
   ErrorBox,
   PrimaryButton,
   SecondaryButton,
@@ -20,7 +21,16 @@ import {
   fieldInput,
 } from "@/components/ui";
 
-type Item = { id: string; type: string; label: string; text: string; hint: string; concepts: string[] };
+type Item = {
+  id: string;
+  type: string;
+  category: string;
+  group: string;
+  label: string;
+  text: string;
+  hint: string;
+  concepts: string[];
+};
 type QueueResponse = { jd: { id: string; company: string; role: string }; items: Item[]; attempted: string[] };
 
 const TYPE_LABEL: Record<string, string> = {
@@ -29,8 +39,19 @@ const TYPE_LABEL: Record<string, string> = {
   situational: "Situational",
   behavioral: "Behavioral",
   gap: "Gap question",
+  resume: "Resume question",
   question: "Interview question",
 };
+// Same categories, in the same order, as the prep kit tabs.
+const CATEGORIES: { key: string; label: string; icon: React.ReactNode }[] = [
+  { key: "concepts", label: "Concepts", icon: <Lightbulb size={18} /> },
+  { key: "questions", label: "Questions", icon: <CircleHelp size={18} /> },
+  { key: "cases", label: "Cases", icon: <Briefcase size={18} /> },
+  { key: "situational", label: "Situational", icon: <Flag size={18} /> },
+  { key: "behavioral", label: "Behavioral", icon: <Star size={18} /> },
+  { key: "resume", label: "Resume and gaps", icon: <User size={18} /> },
+];
+const ALL = "All";
 const SCORE_COLORS = ["bg-mint", "bg-peach", "bg-lavender", "bg-pink"];
 const SCORE_LABELS: [keyof PracticeScore["scores"], string][] = [
   ["structure", "Structure"],
@@ -80,15 +101,30 @@ function PracticeInner() {
     return queue.items.find((i) => i.id === currentId) ?? queue.items[0] ?? null;
   }, [queue, currentId]);
 
+  const [cat, setCat] = useState<string | null>(null);
+  const [group, setGroup] = useState(ALL);
   // Reset the answer when the item changes.
   const [shownId, setShownId] = useState<string | null>(null);
   if (current && current.id !== shownId) {
     setShownId(current.id);
+    // Show the opened question's category; keep "All" unless another subcategory was picked.
+    if (current.category !== cat) {
+      setCat(current.category);
+      // A link to one question (from the prep kit) opens its subcategory; otherwise show all.
+      setGroup((currentId && current.group) || ALL);
+    } else if (group !== ALL && group !== current.group) setGroup(current.group || ALL);
     resetAnswer("");
     setResult(null);
     setScoreError(null);
     setUsedVoice(false);
   }
+
+  // Keep the selected category chip visible in the scrolling row.
+  useEffect(() => {
+    document
+      .querySelector('nav[aria-label="Practice categories"] [aria-pressed="true"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [cat]);
 
   // Undo/redo stop the mic first, so words still being recognised are not added straight back.
   function undo() {
@@ -125,11 +161,20 @@ function PracticeInner() {
     }
   }
 
+  const activeCat = cat ?? current?.category ?? "concepts";
+  const catItems = useMemo(() => queue?.items.filter((i) => i.category === activeCat) ?? [], [queue, activeCat]);
+  const groups = useMemo(() => Array.from(new Set(catItems.map((i) => i.group).filter(Boolean))), [catItems]);
+  const listItems = group === ALL ? catItems : catItems.filter((i) => i.group === group);
+
+  // Next: the next question in this subcategory, then in this category, then anywhere after.
   const nextItem = useMemo(() => {
     if (!queue || !current) return null;
-    const idx = queue.items.findIndex((i) => i.id === current.id);
-    return queue.items[idx + 1] ?? null;
-  }, [queue, current]);
+    const after = (list: Item[]) => {
+      const idx = list.findIndex((i) => i.id === current.id);
+      return idx === -1 ? null : list[idx + 1] ?? null;
+    };
+    return after(listItems) ?? after(catItems) ?? after(queue.items);
+  }, [queue, current, listItems, catItems]);
 
   const panel = result ? (
     <>
@@ -221,29 +266,82 @@ function PracticeInner() {
         <p className="mt-8">No practice items yet. Open the prep kit first.</p>
       ) : (
         <>
-          <nav aria-label="Practice queue" className="mt-6 overflow-x-auto pb-1">
-            <ol className="flex gap-3 whitespace-nowrap text-sm font-semibold">
-              {queue.items.map((it) => {
-                const active = it.id === current.id;
-                const done = queue.attempted.includes(it.id);
+          <nav aria-label="Practice categories" className="mt-6 flex gap-3 overflow-x-auto pb-1">
+            {CATEGORIES.map((c) => {
+              const inCat = queue.items.filter((i) => i.category === c.key);
+              const done = inCat.filter((i) => queue.attempted.includes(i.id)).length;
+              if (!inCat.length) return null;
+              return (
+                <PillChip
+                  key={c.key}
+                  active={activeCat === c.key}
+                  icon={c.icon}
+                  onClick={() => {
+                    setCat(c.key);
+                    setGroup(ALL);
+                  }}
+                >
+                  {c.label}
+                  <span className="font-normal opacity-75">
+                    {done}/{inCat.length}
+                  </span>
+                </PillChip>
+              );
+            })}
+          </nav>
+
+          {groups.length > 1 ? (
+            <div role="group" aria-label="Subcategories" className="mt-4 flex flex-wrap gap-2">
+              {[ALL, ...groups].map((g) => {
+                const n = g === ALL ? catItems.length : catItems.filter((i) => i.group === g).length;
                 return (
-                  <li key={it.id}>
-                    <button
-                      type="button"
-                      onClick={() => goTo(it.id)}
-                      aria-current={active ? "step" : undefined}
-                      className={`inline-flex min-h-[48px] max-w-[320px] items-center gap-2 truncate rounded-full px-4 ${
-                        active ? "bg-ink text-white" : done ? "bg-mint" : "bg-panel"
-                      }`}
-                    >
-                      {done && !active ? <Check size={16} aria-label="practised" /> : null}
-                      <span className="truncate">{it.label}</span>
-                    </button>
-                  </li>
+                  <button
+                    key={g}
+                    type="button"
+                    aria-pressed={group === g}
+                    onClick={() => setGroup(g)}
+                    className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition ${
+                      group === g ? "bg-ink text-white" : "bg-white text-ink hover:bg-panel"
+                    }`}
+                  >
+                    {g}
+                    <span className="font-normal opacity-75">{n}</span>
+                  </button>
                 );
               })}
-            </ol>
-          </nav>
+            </div>
+          ) : null}
+
+          <ol aria-label="Questions" className="mt-4 flex max-h-[340px] flex-col gap-2 overflow-y-auto pr-1">
+            {listItems.map((it) => {
+              const active = it.id === current.id;
+              const done = queue.attempted.includes(it.id);
+              return (
+                <li key={it.id}>
+                  <button
+                    type="button"
+                    onClick={() => goTo(it.id)}
+                    aria-current={active ? "true" : undefined}
+                    className={`flex min-h-[48px] w-full items-center gap-3 rounded-[20px] px-4 py-2.5 text-left text-sm transition ${
+                      active ? "bg-ink text-white" : "bg-white text-ink hover:bg-panel"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-6 w-6 flex-none items-center justify-center rounded-full ${
+                        done ? "bg-mint text-ink" : active ? "bg-white/20" : "bg-panel"
+                      }`}
+                    >
+                      {done ? <Check size={14} aria-label="practised" /> : null}
+                    </span>
+                    <span className="min-w-0 flex-1">{it.label}</span>
+                    {group === ALL && it.group && groups.length > 1 ? (
+                      <span className={`hidden flex-none text-xs sm:inline ${active ? "text-white/75" : "text-muted"}`}>{it.group}</span>
+                    ) : null}
+                  </button>
+                </li>
+              );
+            })}
+          </ol>
 
           <section aria-labelledby="item-h" className="mt-6 flex flex-col gap-4 rounded-[36px] bg-lavender p-7">
             <div className="flex flex-wrap items-center justify-between gap-3">

@@ -51,7 +51,7 @@ prepy/
       page.tsx                         Setup: resume + JD (steps 1–2)
       fit/[jdId]/page.tsx              Fit and Gap Map
       kit/[jdId]/page.tsx              Role prep kit (6 tabs, answer outlines, study plan)
-      practice/[jdId]/page.tsx         Practice: typed + voice dictation, rubric feedback
+      practice/[jdId]/page.tsx         Practice: kit categories → subcategories → question list; typed + voice dictation, undo/redo, rubric feedback
       tutor/page.tsx                   v1 placeholder for the voice AI tutor
       api/
         resume/route.ts                POST upload/paste → P1 parse (not saved yet)

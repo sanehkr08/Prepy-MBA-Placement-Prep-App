@@ -262,14 +262,22 @@ export async function ensureOutline(jdId: string, question: string): Promise<Out
 
 /* ---------- Practice items and study plan (built in code) ---------- */
 
+/** Practice categories match the prep kit tabs; `group` is the subcategory inside one. */
+export const PRACTICE_CATEGORIES = ["concepts", "questions", "cases", "situational", "behavioral", "resume"] as const;
+export type PracticeCategory = (typeof PRACTICE_CATEGORIES)[number];
+
 export type PracticeItem = {
   id: string;
-  type: "concept" | "case" | "situational" | "behavioral" | "gap" | "question";
+  type: "concept" | "case" | "situational" | "behavioral" | "gap" | "resume" | "question";
+  category: PracticeCategory;
+  group: string;
   label: string;
   text: string;
   hint: string;
   concepts: string[];
 };
+
+const short = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}…` : t);
 
 export function practiceItems(jdId: string): PracticeItem[] {
   const items: PracticeItem[] = [];
@@ -278,45 +286,53 @@ export function practiceItems(jdId: string): PracticeItem[] {
   const cases = store.getKit(jdId, "cases")?.data as Cases | undefined;
   const sit = store.getKit(jdId, "situational")?.data as Situational | undefined;
 
+  // Ids are positional (c-topic-item, q-n, …) and stay stable because Generate More only appends.
   concepts?.topics.forEach((t, ti) =>
-    t.items.forEach((c, ci) => {
-      if (c.priority === "High")
-        items.push({
-          id: `c-${ti}-${ci}`,
-          type: "concept",
-          label: `Concept: ${c.name}`,
-          text: `Explain "${c.name}" as you would to an interviewer, and say why it matters in this role.`,
-          hint: c.what,
-          concepts: [c.name],
-        });
+    t.items.forEach((c, ci) =>
+      items.push({
+        id: `c-${ti}-${ci}`,
+        type: "concept",
+        category: "concepts",
+        group: t.name,
+        label: c.name,
+        text: `Explain "${c.name}" as you would to an interviewer, and say why it matters in this role.`,
+        hint: c.what,
+        concepts: [c.name],
+      }),
+    ),
+  );
+  const qs = questions?.questions.map((q, i) => ({ q, i })) ?? [];
+  qs.filter(({ q }) => q.category === "role_knowledge" || q.category === "technical").forEach(({ q, i }) =>
+    items.push({
+      id: `q-${i}`,
+      type: "question",
+      category: "questions",
+      group: q.category === "technical" ? "Technical" : "Role knowledge",
+      label: short(q.text, 90),
+      text: q.text,
+      hint: q.linked_concepts.length ? `Use: ${q.linked_concepts.join(", ")}` : "",
+      concepts: q.linked_concepts,
     }),
   );
   cases?.cases.forEach((c, i) =>
     items.push({
       id: `case-${i}`,
       type: "case",
-      label: `Case: ${c.title}`,
+      category: "cases",
+      group: "",
+      label: c.title,
       text: c.prompt,
       hint: c.framework,
       concepts: c.linked_concepts,
     }),
   );
-  questions?.questions.forEach((q, i) => {
-    if (q.category === "gap" || q.category === "role_knowledge" || q.category === "technical")
-      items.push({
-        id: `q-${i}`,
-        type: q.category === "gap" ? "gap" : "question",
-        label: `${q.category === "gap" ? "Gap" : "Question"}: ${q.text.slice(0, 48)}${q.text.length > 48 ? "…" : ""}`,
-        text: q.text,
-        hint: q.linked_concepts.length ? `Use: ${q.linked_concepts.join(", ")}` : "",
-        concepts: q.linked_concepts,
-      });
-  });
   sit?.situational.forEach((s, i) =>
     items.push({
       id: `s-${i}`,
       type: "situational",
-      label: `Situational: ${s.text.slice(0, 40)}…`,
+      category: "situational",
+      group: s.competency || "General",
+      label: short(s.text, 90),
       text: s.text,
       hint: s.competency ? `Competency: ${s.competency}` : "",
       concepts: [],
@@ -326,10 +342,27 @@ export function practiceItems(jdId: string): PracticeItem[] {
     items.push({
       id: `b-${i}`,
       type: "behavioral",
-      label: `Behavioral: ${s.text.slice(0, 40)}…`,
+      category: "behavioral",
+      group: s.competency || "General",
+      label: short(s.text, 90),
       text: s.text,
       hint: "Answer with STAR, using a real example from your resume.",
       concepts: [],
+    }),
+  );
+  qs.filter(({ q }) => q.category === "resume" || q.category === "gap").forEach(({ q, i }) =>
+    items.push({
+      id: `q-${i}`,
+      type: q.category === "gap" ? "gap" : "resume",
+      category: "resume",
+      group: q.category === "gap" ? "Gap questions" : "Resume questions",
+      label: short(q.text, 90),
+      text: q.text,
+      hint:
+        q.category === "gap"
+          ? "Be honest about the gap, then bridge it with your closest real experience."
+          : "Answer with STAR, using the real details from your resume.",
+      concepts: q.linked_concepts,
     }),
   );
   return items;
