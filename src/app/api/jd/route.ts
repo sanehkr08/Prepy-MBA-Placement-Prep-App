@@ -1,15 +1,16 @@
+import { withUser } from "@/lib/api-auth";
 import { callLLM, errorResponse } from "@/lib/llm";
 import { textFromForm, ExtractError } from "@/lib/extract";
 import { JDSchema } from "@/lib/schemas";
 import { P2 } from "@/lib/prompts";
 import { store } from "@/lib/store";
 
-export async function GET() {
+async function handleGET() {
   return Response.json({ jds: store.listJDs() });
 }
 
 /** Add a JD (pasted or PDF) → parsed and saved. */
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     if (!store.getProfile()) {
       return Response.json({ error: "Save your profile first." }, { status: 400 });
@@ -33,3 +34,6 @@ export async function POST(req: Request) {
     return errorResponse(err);
   }
 }
+
+export const GET = withUser(handleGET);
+export const POST = withUser(handlePOST);

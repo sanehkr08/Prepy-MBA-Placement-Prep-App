@@ -11,7 +11,7 @@ Built as an MBA product-management project. Spec: the Prepy PRD. Rules for AI co
 
 ## Run it on your computer (Windows, PowerShell)
 
-You need Node.js 20 or newer (`node -v` to check; install the LTS from https://nodejs.org if missing) and one API key. **Gemini has a free tier**: create a key at https://aistudio.google.com/apikey (sign in with Google, click *Create API key*). **Groq** (not Grok) also has a free tier: create a key at https://console.groq.com/keys and paste it after `GROQ_API_KEY=`. With both set, Groq takes over when Gemini hits its limit. Grok (`XAI_API_KEY`) and Claude (`ANTHROPIC_API_KEY`) also work but are paid.
+You need Node.js 22.13 or newer (`node -v` to check; Prepy uses its built-in SQLite; install the LTS from https://nodejs.org if missing) and one API key. **Gemini has a free tier**: create a key at https://aistudio.google.com/apikey (sign in with Google, click *Create API key*). **Groq** (not Grok) also has a free tier: create a key at https://console.groq.com/keys and paste it after `GROQ_API_KEY=`. With both set, Groq takes over when Gemini hits its limit. Grok (`XAI_API_KEY`) and Claude (`ANTHROPIC_API_KEY`) also work but are paid.
 
 Easiest: double-click `setup.bat`. It installs packages, creates `.env.local`, makes the first Git commit and opens VS Code. Or do it by hand:
 
@@ -23,7 +23,26 @@ code .env.local      # paste your key after GEMINI_API_KEY=
 npm run dev
 ```
 
-Open http://localhost:3000 in **Chrome or Edge** (needed for voice input).
+Open http://localhost:3000 in **Chrome or Edge** (needed for voice input). You land on the sign-in page: choose **Create account**, then upload your resume or type your details.
+
+`.env.local` also needs `AUTH_SECRET` (it signs the sign-in cookie). Generate one with:
+
+```powershell
+node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+```
+
+The first account you create takes over any data saved before sign-in existed (`data/prepy.json`, kept as `data/prepy.json.migrated`).
+
+### Turn on "Continue with Google" (optional, about 5 minutes)
+
+Email and password work without this.
+
+1. Go to https://console.cloud.google.com/ and create a project (any name, e.g. "Prepy").
+2. **APIs & Services → OAuth consent screen**: choose **External**, fill in the app name, your email as support and developer contact, and save. Under **Test users**, add the Google accounts that may sign in.
+3. **APIs & Services → Credentials → Create credentials → OAuth client ID**: type **Web application**.
+   - Authorized JavaScript origins: `http://localhost:3000`
+   - Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google`
+4. Copy the **Client ID** and **Client secret** into `.env.local` after `AUTH_GOOGLE_ID=` and `AUTH_GOOGLE_SECRET=`, then restart `npm run dev`. The Google button appears on the sign-in page.
 
 Check the key works: open http://localhost:3000/api/health/llm. You should see `"ok": true`.
 
@@ -45,7 +64,7 @@ git remote add origin https://github.com/<your-username>/prepy.git
 git push -u origin main
 ```
 
-Your resume, JDs and practice answers live in `data/` and your key in `.env.local`. Both are git-ignored, so they never reach GitHub.
+Your accounts, resumes, JDs and practice answers live in `data/prepy.db` and your keys in `.env.local`. Both are git-ignored, so they never reach GitHub.
 
 After each change: `git add .` → `git commit -m "feat: …"` → `git push`.
 
@@ -55,7 +74,7 @@ In VS Code, open the folder, open the terminal and run `claude`. Start with: "Re
 
 ## Run the evals (for the report)
 
-1. Use the app once so your profile is saved.
+1. Use the app once so your profile is saved. With several accounts, set `$env:PREPY_EVAL_EMAIL = "you@example.com"` to choose whose profile the evals use.
 2. Put JDs in `evals/testset/` as `"<Company> - <Role>.txt"` (two clearly-labelled samples are included). Put real JDs you don't want on GitHub in `evals/testset/private/`. Optionally add `"<same name>.concepts.txt"` with a reference concept list, one per line.
 3. Run:
 
@@ -69,17 +88,19 @@ Results are written to `evals/results/<date>.md`: grounding (unsupported claims)
 
 | Path | What |
 | --- | --- |
-| `src/app/` | Pages (setup, fit, kit, practice, tutor) and API routes |
-| `src/lib/prompts.ts` | All prompts P1–P9, versioned |
+| `src/app/` | Pages (sign-in, onboarding, setup, fit, kit, practice, tutor) and API routes |
+| `src/auth.ts`, `src/proxy.ts` | Sign-in (Auth.js: Google + email/password) and the signed-in check for every page and API route |
+| `src/lib/prompts.ts` | All prompts P1–P13, versioned |
 | `src/lib/llm.ts` | Model calls: JSON only, Zod validation, one retry, token logging |
 | `src/lib/prep.ts` | Fit map, kit sections, grounding guards, practice queue, study plan |
-| `src/lib/store.ts` | Local JSON data store (`data/prepy.json`) |
+| `src/lib/db.ts`, `src/lib/store.ts` | SQLite database (`data/prepy.db`); the store only reads and writes the signed-in user's rows |
+| `src/lib/users.ts` | Accounts, password hashing, one-time move of MVP data into the first account |
 | `src/components/` | UI kit (pastel cards, pill chips, side rail), profile editor, voice dictation hook |
 | `evals/` | Eval harness and test set |
 | `docs/` | Decision log; add mockup screenshots to `docs/mockups/` |
 
-## Known limits (MVP)
+## Known limits
 
-- Single user, runs locally; no login.
+- Runs locally. Several people can have accounts on one computer, each with their own data.
 - Voice uses the browser's speech recognition (Chrome or Edge). Accuracy for Indian English varies; always check the transcript before scoring.
 - The voice AI tutor is a v1 feature; `/tutor` is a placeholder.

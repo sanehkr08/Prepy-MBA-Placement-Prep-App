@@ -1,8 +1,9 @@
+import { withUser } from "@/lib/api-auth";
 import { z } from "zod";
 import { callLLM, errorResponse, lastProvider, activeModel, providerChain } from "@/lib/llm";
 
 /** Quick check that the API key and model work: open /api/health/llm in the browser. */
-export async function GET() {
+async function handleGET() {
   try {
     const out = await callLLM({
       name: "health",
@@ -18,3 +19,5 @@ export async function GET() {
     return errorResponse(err);
   }
 }
+
+export const GET = withUser(handleGET);

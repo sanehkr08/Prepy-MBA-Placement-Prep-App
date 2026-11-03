@@ -1,10 +1,11 @@
+import { withUser } from "@/lib/api-auth";
 import { callLLM, errorResponse } from "@/lib/llm";
 import { textFromForm, ExtractError } from "@/lib/extract";
 import { ProfileSchema } from "@/lib/schemas";
 import { P1 } from "@/lib/prompts";
 
 /** Upload or paste a resume → parsed profile (not saved until the user confirms). */
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const form = await req.formData();
     const text = await textFromForm(form);
@@ -21,3 +22,5 @@ export async function POST(req: Request) {
     return errorResponse(err);
   }
 }
+
+export const POST = withUser(handlePOST);

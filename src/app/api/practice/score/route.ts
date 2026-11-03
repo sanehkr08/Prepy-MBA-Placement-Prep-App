@@ -1,3 +1,4 @@
+import { withUser } from "@/lib/api-auth";
 import { callLLM, errorResponse } from "@/lib/llm";
 import { practiceItems, requireJD } from "@/lib/prep";
 import { PracticeScoreSchema } from "@/lib/schemas";
@@ -5,7 +6,7 @@ import { P9 } from "@/lib/prompts";
 import { store } from "@/lib/store";
 
 /** Score one practice answer (typed or dictated) and save the attempt. */
-export async function POST(req: Request) {
+async function handlePOST(req: Request) {
   try {
     const body = (await req.json()) as {
       jdId: string;
@@ -48,3 +49,5 @@ export async function POST(req: Request) {
     return errorResponse(err);
   }
 }
+
+export const POST = withUser(handlePOST);

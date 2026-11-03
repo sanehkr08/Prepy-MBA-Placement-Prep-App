@@ -5,7 +5,8 @@
  *   npx tsx --env-file=.env.local evals/run-evals.ts
  *
  * Needs:
- *   - a saved profile in data/prepy.json (upload your resume in the app first)
+ *   - a saved profile in data/prepy.db (sign in and save your profile in the app first;
+ *     with several accounts, set PREPY_EVAL_EMAIL to pick whose profile to use)
  *   - JD files in evals/testset/ (or evals/testset/private/ for real JDs you
  *     don't want in Git), named "<Company> - <Role>.txt"
  *   - optional reference concept lists: "<same name>.concepts.txt", one concept per line
@@ -19,13 +20,24 @@ import { z } from "zod";
 
 const ROOT = process.cwd();
 const EVAL_DATA = path.join(ROOT, "evals", ".data");
-const MAIN_DB = path.join(ROOT, "data", "prepy.json");
+const MAIN_DB = path.join(ROOT, "data", "prepy.db");
 
 // Use a separate store for eval runs, seeded with the saved profile.
 fs.mkdirSync(EVAL_DATA, { recursive: true });
 process.env.PREPY_DATA_DIR = EVAL_DATA;
 
 async function main() {
+  // The eval store is its own SQLite file with one eval user; all store calls run as that user.
+  const { db } = await import("../src/lib/db");
+  const { runAsUser } = await import("../src/lib/user-context");
+  db()
+    .prepare("INSERT OR IGNORE INTO users (id, email, name, created_at) VALUES ('eval', 'eval@prepy.local', 'Eval', ?)")
+    .run(new Date().toISOString());
+  await runAsUser("eval", evalMain);
+}
+
+async function evalMain() {
+  const { DatabaseSync } = await import("node:sqlite");
   const { store } = await import("../src/lib/store");
   const { callLLM, activeProvider, activeModel } = await import("../src/lib/llm");
   const { P2, P9 } = await import("../src/lib/prompts");
@@ -37,12 +49,22 @@ async function main() {
   type Cases = import("../src/lib/schemas").Cases;
   type Situational = import("../src/lib/schemas").Situational;
 
-  if (!fs.existsSync(MAIN_DB)) throw new Error("No data/prepy.json. Upload and save your resume in the app first.");
-  const main = JSON.parse(fs.readFileSync(MAIN_DB, "utf8"));
-  if (!main.profile) throw new Error("No saved profile found. Save your profile in the app first.");
+  if (!fs.existsSync(MAIN_DB)) throw new Error("No data/prepy.db. Sign in and save your profile in the app first.");
+  const mainDb = new DatabaseSync(MAIN_DB, { readOnly: true });
+  const who = process.env.PREPY_EVAL_EMAIL?.trim().toLowerCase();
+  const row = (
+    who
+      ? mainDb
+          .prepare("SELECT p.raw_text, p.data FROM profiles p JOIN users u ON u.id = p.user_id WHERE u.email = ?")
+          .get(who)
+      : mainDb.prepare("SELECT raw_text, data FROM profiles ORDER BY updated_at DESC LIMIT 1").get()
+  ) as { raw_text: string; data: string } | undefined;
+  mainDb.close();
+  if (!row) throw new Error("No saved profile found. Save your profile in the app first.");
+  const mainProfile = { raw_text: row.raw_text, data: JSON.parse(row.data) };
   store.deleteAll();
-  store.saveProfile(main.profile.data, main.profile.raw_text);
-  const lines = profileLines(main.profile.data);
+  store.saveProfile(mainProfile.data, mainProfile.raw_text);
+  const lines = profileLines(mainProfile.data);
 
   const dirs = [path.join(ROOT, "evals", "testset"), path.join(ROOT, "evals", "testset", "private")];
   const files = dirs

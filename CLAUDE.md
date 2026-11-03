@@ -11,7 +11,7 @@ Prepy is a GenAI interview-prep web app for MBA placements. The user uploads a r
 3. **Answer builder**: STAR answer outlines built only from the user's own resume.
 4. **Practice**: answer any kit item by typing **or speaking (voice dictation)** and get rubric-scored feedback.
 
-The MVP has a single user (the owner). No login, no multi-user accounts.
+Version 1 adds accounts: sign in with Google or email + password, onboarding (resume upload or manual details), and per-user data. Each user only ever sees their own data.
 
 Full spec: the Prepy PRD doc in the claude.ai Project (export it as Markdown to `docs/PRD.md` to keep a copy in the repo). Decisions: `docs/decision-log.md`. Screen designs: `docs/mockups/` (screenshots of the approved mockups).
 
@@ -33,7 +33,8 @@ Full spec: the Prepy PRD doc in the claude.ai Project (export it as Markdown to 
 | Validation | Zod schema for every LLM output; one automatic retry on invalid JSON |
 | PDF text | `unpdf` |
 | DOCX text | `mammoth` |
-| Storage | Local JSON file `data/prepy.json` behind `src/lib/store.ts` (no native build tools needed on Windows; swap for a database later without touching routes) |
+| Auth | Auth.js v5 (`next-auth@5` beta) in `src/auth.ts`: Google (when `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` are set) + email/password (scrypt hashes, `src/lib/users.ts`). JWT sessions signed with `AUTH_SECRET`. `src/proxy.ts` (Next 16's renamed middleware) sends signed-out page requests to /signin and answers API requests with 401 |
+| Storage | SQLite via Node's built-in `node:sqlite` (`data/prepy.db`, `src/lib/db.ts`; Node 22.13+, no native build tools). `src/lib/store.ts` keeps the same API but is scoped to the current user: every API route is wrapped in `withUser` (`src/lib/api-auth.ts`), which runs the work inside `runAsUser` (`src/lib/user-context.ts`). Background work (e.g. `after()`) must be wrapped in `runAsUser` too |
 | Voice (MVP) | Browser Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`), `lang = 'en-IN'`, interim results on |
 | Icons | `lucide-react` (stroke icons only, no emoji in the UI) |
 | Font | DM Sans, self-hosted via `@fontsource-variable/dm-sans` (no network fetch at build) |
@@ -48,12 +49,17 @@ prepy/
   docs/                   decision-log.md, mockups/ (add screenshots of the approved mockups)
   src/
     app/
+      signin/                          Sign in / create account (Google + email/password)
+      onboarding/page.tsx              First sign-in: upload resume or enter details → profile
       page.tsx                         Setup: resume + JD (steps 1–2)
       fit/[jdId]/page.tsx              Fit and Gap Map
       kit/[jdId]/page.tsx              Role prep kit (6 tabs, Read more study notes per concept, Generate More per concept topic, answer outlines, study plan)
       practice/[jdId]/page.tsx         Practice: kit categories → subcategories → question list; typed + voice dictation, undo/redo, rubric feedback
       tutor/page.tsx                   v1 placeholder for the voice AI tutor
       api/
+        auth/[...nextauth]/route.ts    Auth.js endpoints
+        register/route.ts              POST email/password sign-up
+        me/route.ts                    GET the signed-in account (name, email, picture)
         resume/route.ts                POST upload/paste → P1 parse (not saved yet)
         profile/route.ts               GET / PUT the confirmed profile
         jd/route.ts                    GET list, POST add JD → P2 parse
@@ -75,7 +81,11 @@ prepy/
       prep.ts           orchestration, caching, in-flight request sharing, kit prefetch, Generate More, grounding guards, practice queue, study plan
       profile-lines.ts  numbered profile lines (ED1, EX1.B2, AC1…) used for citations
       schemas.ts        Zod schemas
-      store.ts          JSON file store
+      db.ts             SQLite connection + schema
+      store.ts          per-user data store (same API as the MVP's JSON store)
+      users.ts          accounts, password hashing, one-time import of data/prepy.json into the first account
+      user-context.ts   runAsUser / currentUserId (AsyncLocalStorage)
+      api-auth.ts       withUser(): signed-in check + user scope for API routes
       extract.ts        PDF/DOCX/TXT → text
       client.ts         browser fetch helper
   evals/          run-evals.ts, testset/ (sample JDs + reference concept lists), results/
@@ -108,6 +118,7 @@ prepy/
 
 - One task from `BUILD_PLAN.md` at a time. Do not start the next task until the owner confirms.
 - Keep the API key server-side only (API routes). Never expose it to the client.
+- Every new API route is wrapped in `withUser`. Never read or write data outside a user scope.
 - Every LLM call goes through `callLLM` with a Zod schema; it logs prompt name, tokens and latency to the store.
 - Grounding is enforced in code too: a Strong fit label without a valid profile ref is downgraded to Partial, and answer-outline refs not in the profile are dropped (`src/lib/prep.ts`).
 - Prompts live in `src/lib/prompts.ts`, each with a `version` string so evals can compare versions. Bump it when you change a prompt.
@@ -118,7 +129,7 @@ prepy/
 ## 7. Git
 
 - `main` is always working. Commit at the end of every task.
-- Never commit `.env.local`, `data/`, uploaded resumes or JDs. Keep `.gitignore` up to date.
+- Never commit `.env.local`, `data/` (including `prepy.db`), uploaded resumes or JDs. Keep `.gitignore` up to date.
 - `.env.example` lists the variable names with empty values.
 
 ## 8. Environment variables
@@ -130,13 +141,16 @@ GROQ_API_KEY=            # free key from https://console.groq.com/keys (fallback
 # ANTHROPIC_API_KEY=     # optional, Claude
 # LLM_PROVIDER=          # gemini | xai | anthropic (auto from the key set)
 # LLM_MODEL=             # override the default model (gemini-flash-latest, grok-4.3, claude-sonnet-5-5)
+AUTH_SECRET=             # signs the sign-in cookie (generate a random value; see README)
+AUTH_GOOGLE_ID=          # optional: Google OAuth client (README has the steps)
+AUTH_GOOGLE_SECRET=
 ```
 
 Free-tier note: on Gemini's free tier, Google may use prompts and outputs to improve its products. The resume text is sent to the model.
 
 ## 9. Out of scope for the MVP
 
-Voice AI tutor (v1: placeholder page at /tutor), story bank, practice history analytics, group discussion, video answers, RAG over case books, multi-user login, deployment beyond an optional Vercel preview.
+Video answers, RAG over case books, deployment beyond an optional Vercel preview. (Version 1 plan, in order: accounts and onboarding (done), home page with greeting and two paths, Prepare for a role, mock interview, impromptu speaking, group discussion.)
 
 ## 10. Build status
 

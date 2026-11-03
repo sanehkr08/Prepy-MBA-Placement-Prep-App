@@ -4,6 +4,7 @@
  */
 import { callLLM, LLMError } from "./llm";
 import { store } from "./store";
+import { currentUserId } from "./user-context";
 import {
   FitMapSchema,
   ConceptsSchema,
@@ -42,7 +43,8 @@ export function requireJD(jdId: string) {
 // One generation per key at a time: a second request for the same thing (double click,
 // background prefetch, React re-render) waits for the first instead of paying for another call.
 const inFlight = new Map<string, Promise<unknown>>();
-function once<T>(key: string, run: () => Promise<T>): Promise<T> {
+function once<T>(name: string, run: () => Promise<T>): Promise<T> {
+  const key = `${currentUserId()}:${name}`;
   const running = inFlight.get(key);
   if (running) return running as Promise<T>;
   const p = run().finally(() => inFlight.delete(key));

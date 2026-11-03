@@ -1,13 +1,14 @@
+import { withUser } from "@/lib/api-auth";
 import { store } from "@/lib/store";
 import { ProfileSchema } from "@/lib/schemas";
 import { errorResponse } from "@/lib/llm";
 
-export async function GET() {
+async function handleGET() {
   return Response.json({ profile: store.getProfile() });
 }
 
 /** Save the confirmed (reviewed) profile. */
-export async function PUT(req: Request) {
+async function handlePUT(req: Request) {
   try {
     const body = (await req.json()) as { profile: unknown; raw_text?: string };
     const parsed = ProfileSchema.safeParse(body.profile);
@@ -18,3 +19,6 @@ export async function PUT(req: Request) {
     return errorResponse(err);
   }
 }
+
+export const GET = withUser(handleGET);
+export const PUT = withUser(handlePUT);

@@ -1,9 +1,10 @@
+import { withUser } from "@/lib/api-auth";
 import { errorResponse } from "@/lib/llm";
 import { ensureSection, requireJD } from "@/lib/prep";
 import { KIT_SECTIONS, type KitSection } from "@/lib/schemas";
 
 /** One prep-kit section: concepts | questions | cases | situational. ?refresh=1 regenerates. */
-export async function GET(
+async function handleGET(
   req: Request,
   { params }: { params: Promise<{ jdId: string; section: string }> },
 ) {
@@ -23,3 +24,5 @@ export async function GET(
     return errorResponse(err);
   }
 }
+
+export const GET = withUser(handleGET);

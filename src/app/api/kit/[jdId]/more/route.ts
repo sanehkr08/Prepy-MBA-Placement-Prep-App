@@ -1,8 +1,9 @@
+import { withUser } from "@/lib/api-auth";
 import { errorResponse } from "@/lib/llm";
 import { generateMore, MORE_TABS, type MoreTab } from "@/lib/prep";
 
 /** Generate More: add new, non-repeating items to one kit tab. Body: { tab, topic? } (topic: concepts only). */
-export async function POST(req: Request, { params }: { params: Promise<{ jdId: string }> }) {
+async function handlePOST(req: Request, { params }: { params: Promise<{ jdId: string }> }) {
   try {
     const { jdId } = await params;
     const { tab, topic } = (await req.json().catch(() => ({}))) as { tab?: string; topic?: string };
@@ -14,3 +15,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ jdId: s
     return errorResponse(err);
   }
 }
+
+export const POST = withUser(handlePOST);

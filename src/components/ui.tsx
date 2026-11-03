@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useEffect, useState, type ReactNode } from "react";
-import { FileText, Target, BookOpen, Mic, AudioLines, LoaderCircle, ArrowLeft, ArrowRight } from "lucide-react";
+import { FileText, Target, BookOpen, Mic, AudioLines, LoaderCircle, ArrowLeft, ArrowRight, LogOut } from "lucide-react";
+import { signOut } from "next-auth/react";
 import { lastJD } from "@/lib/client";
 
 export type Pastel = "pink" | "peach" | "lavender" | "mint" | "white";
@@ -89,6 +90,15 @@ export function SideRail({ active, jdId }: { active: RailKey; jdId?: string | nu
       <RailLink href="/tutor" label="Talk to Prepy (voice tutor)" active={active === "tutor"} accent>
         <AudioLines size={22} strokeWidth={1.6} />
       </RailLink>
+      <button
+        type="button"
+        onClick={() => void signOut({ redirectTo: "/signin" })}
+        aria-label="Sign out"
+        title="Sign out"
+        className="ml-auto flex h-[52px] w-[52px] items-center justify-center rounded-full bg-white text-ink transition hover:bg-panel md:ml-0 md:mt-auto md:mb-7"
+      >
+        <LogOut size={20} strokeWidth={1.6} />
+      </button>
     </nav>
   );
 }

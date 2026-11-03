@@ -1,10 +1,11 @@
+import { withUser } from "@/lib/api-auth";
 import { errorResponse } from "@/lib/llm";
 import { ensureConceptQuestions, ensureSection, practiceItems, requireJD } from "@/lib/prep";
 import { KIT_SECTIONS } from "@/lib/schemas";
 import { store } from "@/lib/store";
 
 /** Practice queue for a JD. Generates any missing kit sections first. */
-export async function GET(_req: Request, { params }: { params: Promise<{ jdId: string }> }) {
+async function handleGET(_req: Request, { params }: { params: Promise<{ jdId: string }> }) {
   try {
     const { jdId } = await params;
     const jd = requireJD(jdId);
@@ -22,3 +23,5 @@ export async function GET(_req: Request, { params }: { params: Promise<{ jdId: s
     return errorResponse(err);
   }
 }
+
+export const GET = withUser(handleGET);

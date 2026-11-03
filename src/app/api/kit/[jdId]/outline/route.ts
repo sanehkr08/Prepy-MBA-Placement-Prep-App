@@ -1,9 +1,10 @@
+import { withUser } from "@/lib/api-auth";
 import { errorResponse } from "@/lib/llm";
 import { ensureOutline, requireProfile } from "@/lib/prep";
 import { profileLines, refLabel } from "@/lib/profile-lines";
 
 /** STAR answer outline for one question, grounded in the profile. */
-export async function POST(req: Request, { params }: { params: Promise<{ jdId: string }> }) {
+async function handlePOST(req: Request, { params }: { params: Promise<{ jdId: string }> }) {
   try {
     const { jdId } = await params;
     const { question } = (await req.json()) as { question?: string };
@@ -24,3 +25,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ jdId: s
     return errorResponse(err);
   }
 }
+
+export const POST = withUser(handlePOST);

@@ -45,6 +45,11 @@ export default function SetupPage() {
   const [jdError, setJdError] = useState<string | null>(null);
   const [jds, setJds] = useState<JDItem[]>([]);
 
+  // New accounts set up their profile first.
+  useEffect(() => {
+    if (loaded && !profile) router.replace("/onboarding");
+  }, [loaded, profile, router]);
+
   useEffect(() => {
     api<{ jds: JDItem[] }>("/api/jd")
       .then((r) => setJds(r.jds))

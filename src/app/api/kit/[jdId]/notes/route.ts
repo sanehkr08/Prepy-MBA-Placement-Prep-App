@@ -1,8 +1,9 @@
+import { withUser } from "@/lib/api-auth";
 import { errorResponse } from "@/lib/llm";
 import { ensureConceptNotes } from "@/lib/prep";
 
 /** Study notes for one concept ("Read more"). Body: { topic, item } (positions in the concepts list). */
-export async function POST(req: Request, { params }: { params: Promise<{ jdId: string }> }) {
+async function handlePOST(req: Request, { params }: { params: Promise<{ jdId: string }> }) {
   try {
     const { jdId } = await params;
     const { topic, item } = (await req.json().catch(() => ({}))) as { topic?: number; item?: number };
@@ -14,3 +15,5 @@ export async function POST(req: Request, { params }: { params: Promise<{ jdId: s
     return errorResponse(err);
   }
 }
+
+export const POST = withUser(handlePOST);
