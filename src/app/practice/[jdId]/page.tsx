@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
-import { Briefcase, Check, Mic, Square, Undo2, Redo2, Lightbulb, CircleHelp, Flag, Star, User } from "lucide-react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Briefcase, Check, Mic, Square, Undo2, Redo2, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { api, rememberJD } from "@/lib/client";
 import type { PracticeScore } from "@/lib/schemas";
 import { useDictation, useUndoableText } from "@/components/hooks";
@@ -13,7 +13,6 @@ import {
   PanelCard,
   IconCircle,
   Badge,
-  PillChip,
   ErrorBox,
   PrimaryButton,
   SecondaryButton,
@@ -43,15 +42,34 @@ const TYPE_LABEL: Record<string, string> = {
   question: "Interview question",
 };
 // Same categories, in the same order, as the prep kit tabs.
-const CATEGORIES: { key: string; label: string; icon: React.ReactNode }[] = [
-  { key: "concepts", label: "Concepts", icon: <Lightbulb size={18} /> },
-  { key: "questions", label: "Questions", icon: <CircleHelp size={18} /> },
-  { key: "cases", label: "Cases", icon: <Briefcase size={18} /> },
-  { key: "situational", label: "Situational", icon: <Flag size={18} /> },
-  { key: "behavioral", label: "Behavioral", icon: <Star size={18} /> },
-  { key: "resume", label: "Resume and gaps", icon: <User size={18} /> },
+const CATEGORIES: { key: string; label: string }[] = [
+  { key: "concepts", label: "Concepts" },
+  { key: "questions", label: "Questions" },
+  { key: "cases", label: "Cases" },
+  { key: "situational", label: "Situational" },
+  { key: "behavioral", label: "Behavioral" },
+  { key: "resume", label: "Resume and gaps" },
 ];
 const ALL = "All";
+const selectClass =
+  "min-h-[48px] w-full cursor-pointer rounded-2xl border-0 bg-white px-3.5 text-[15px] font-medium text-ink outline-none ring-1 ring-transparent focus:ring-ink";
+
+// Which questions the user ticked, per JD. Only a convenience: the page works without it.
+const selKey = (jdId: string) => `prepy:practice-selection:${jdId}`;
+function loadSelection(jdId: string): string[] {
+  try {
+    return JSON.parse(localStorage.getItem(selKey(jdId)) ?? "[]") as string[];
+  } catch {
+    return [];
+  }
+}
+function saveSelection(jdId: string, ids: string[]) {
+  try {
+    localStorage.setItem(selKey(jdId), JSON.stringify(ids));
+  } catch {
+    /* storage unavailable */
+  }
+}
 const SCORE_COLORS = ["bg-mint", "bg-peach", "bg-lavender", "bg-pink"];
 const SCORE_LABELS: [keyof PracticeScore["scores"], string][] = [
   ["structure", "Structure"],
@@ -103,14 +121,20 @@ function PracticeInner() {
 
   const [cat, setCat] = useState<string | null>(null);
   const [group, setGroup] = useState(ALL);
+  const [selected, setSelected] = useState<string[]>([]);
+  useEffect(() => {
+    // localStorage is only available after mount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelected(loadSelection(jdId));
+  }, [jdId]);
+
   // Reset the answer when the item changes.
   const [shownId, setShownId] = useState<string | null>(null);
   if (current && current.id !== shownId) {
     setShownId(current.id);
-    // Show the opened question's category; keep "All" unless another subcategory was picked.
+    // A link to one question (e.g. from the prep kit) opens its category and subcategory.
     if (current.category !== cat) {
       setCat(current.category);
-      // A link to one question (from the prep kit) opens its subcategory; otherwise show all.
       setGroup((currentId && current.group) || ALL);
     } else if (group !== ALL && group !== current.group) setGroup(current.group || ALL);
     resetAnswer("");
@@ -118,13 +142,6 @@ function PracticeInner() {
     setScoreError(null);
     setUsedVoice(false);
   }
-
-  // Keep the selected category chip visible in the scrolling row.
-  useEffect(() => {
-    document
-      .querySelector('nav[aria-label="Practice categories"] [aria-pressed="true"]')
-      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
-  }, [cat]);
 
   // Undo/redo stop the mic first, so words still being recognised are not added straight back.
   function undo() {
@@ -162,19 +179,59 @@ function PracticeInner() {
   }
 
   const activeCat = cat ?? current?.category ?? "concepts";
-  const catItems = useMemo(() => queue?.items.filter((i) => i.category === activeCat) ?? [], [queue, activeCat]);
-  const groups = useMemo(() => Array.from(new Set(catItems.map((i) => i.group).filter(Boolean))), [catItems]);
-  const listItems = group === ALL ? catItems : catItems.filter((i) => i.group === group);
+  const itemsIn = useCallback(
+    (c: string, g: string) => queue?.items.filter((i) => i.category === c && (g === ALL || i.group === g)) ?? [],
+    [queue],
+  );
+  // The practice set: the ticked questions in this subcategory, or all of them when none are ticked.
+  const setFor = useCallback(
+    (c: string, g: string) => {
+      const scope = itemsIn(c, g);
+      const ticked = scope.filter((i) => selected.includes(i.id));
+      return ticked.length ? ticked : scope;
+    },
+    [itemsIn, selected],
+  );
+  const groups = useMemo(
+    () => Array.from(new Set(itemsIn(activeCat, ALL).map((i) => i.group).filter(Boolean))),
+    [itemsIn, activeCat],
+  );
+  const scopeItems = itemsIn(activeCat, group);
+  const tickedInScope = scopeItems.filter((i) => selected.includes(i.id)).length;
+  const practiceSet = setFor(activeCat, group);
+  const position = current ? practiceSet.findIndex((i) => i.id === current.id) : -1;
+  const prevItem = position > 0 ? practiceSet[position - 1] : null;
+  const nextItem = position === -1 ? (practiceSet[0] ?? null) : (practiceSet[position + 1] ?? null);
 
-  // Next: the next question in this subcategory, then in this category, then anywhere after.
-  const nextItem = useMemo(() => {
-    if (!queue || !current) return null;
-    const after = (list: Item[]) => {
-      const idx = list.findIndex((i) => i.id === current.id);
-      return idx === -1 ? null : list[idx + 1] ?? null;
+  function chooseCategory(c: string) {
+    setCat(c);
+    setGroup(ALL);
+    const first = setFor(c, ALL)[0];
+    if (first) goTo(first.id);
+  }
+  function chooseGroup(g: string) {
+    setGroup(g);
+    const first = setFor(activeCat, g)[0];
+    if (first) goTo(first.id);
+  }
+  function setTicked(ids: string[]) {
+    setSelected(ids);
+    saveSelection(jdId, ids);
+  }
+  function toggleTick(id: string) {
+    setTicked(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+  }
+
+  // Close the question checklist when clicking outside it.
+  const pickerRef = useRef<HTMLDetailsElement>(null);
+  useEffect(() => {
+    const close = (e: MouseEvent) => {
+      const el = pickerRef.current;
+      if (el?.open && !el.contains(e.target as Node)) el.open = false;
     };
-    return after(listItems) ?? after(catItems) ?? after(queue.items);
-  }, [queue, current, listItems, catItems]);
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
 
   const panel = result ? (
     <>
@@ -266,82 +323,116 @@ function PracticeInner() {
         <p className="mt-8">No practice items yet. Open the prep kit first.</p>
       ) : (
         <>
-          <nav aria-label="Practice categories" className="mt-6 flex gap-3 overflow-x-auto pb-1">
-            {CATEGORIES.map((c) => {
-              const inCat = queue.items.filter((i) => i.category === c.key);
-              const done = inCat.filter((i) => queue.attempted.includes(i.id)).length;
-              if (!inCat.length) return null;
-              return (
-                <PillChip
-                  key={c.key}
-                  active={activeCat === c.key}
-                  icon={c.icon}
-                  onClick={() => {
-                    setCat(c.key);
-                    setGroup(ALL);
-                  }}
-                >
-                  {c.label}
-                  <span className="font-normal opacity-75">
-                    {done}/{inCat.length}
-                  </span>
-                </PillChip>
-              );
-            })}
-          </nav>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto]">
+            <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-muted">
+              Category
+              <select className={selectClass} value={activeCat} onChange={(e) => chooseCategory(e.target.value)}>
+                {CATEGORIES.map((c) => {
+                  const inCat = itemsIn(c.key, ALL);
+                  if (!inCat.length) return null;
+                  const done = inCat.filter((i) => queue.attempted.includes(i.id)).length;
+                  return (
+                    <option key={c.key} value={c.key}>
+                      {c.label} · {done}/{inCat.length} done
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-[13px] font-semibold text-muted">
+              Subcategory
+              <select
+                className={`${selectClass} disabled:cursor-not-allowed disabled:opacity-60`}
+                value={group}
+                onChange={(e) => chooseGroup(e.target.value)}
+                disabled={groups.length < 2}
+              >
+                <option value={ALL}>All ({itemsIn(activeCat, ALL).length})</option>
+                {groups.map((g) => (
+                  <option key={g} value={g}>
+                    {g} ({itemsIn(activeCat, g).length})
+                  </option>
+                ))}
+              </select>
+            </label>
 
-          {groups.length > 1 ? (
-            <div role="group" aria-label="Subcategories" className="mt-4 flex flex-wrap gap-2">
-              {[ALL, ...groups].map((g) => {
-                const n = g === ALL ? catItems.length : catItems.filter((i) => i.group === g).length;
-                return (
-                  <button
-                    key={g}
-                    type="button"
-                    aria-pressed={group === g}
-                    onClick={() => setGroup(g)}
-                    className={`inline-flex min-h-[44px] items-center gap-1.5 rounded-full px-4 text-sm font-semibold transition ${
-                      group === g ? "bg-ink text-white" : "bg-white text-ink hover:bg-panel"
-                    }`}
-                  >
-                    {g}
-                    <span className="font-normal opacity-75">{n}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
-
-          <ol aria-label="Questions" className="mt-4 flex max-h-[340px] flex-col gap-2 overflow-y-auto pr-1">
-            {listItems.map((it) => {
-              const active = it.id === current.id;
-              const done = queue.attempted.includes(it.id);
-              return (
-                <li key={it.id}>
-                  <button
-                    type="button"
-                    onClick={() => goTo(it.id)}
-                    aria-current={active ? "true" : undefined}
-                    className={`flex min-h-[48px] w-full items-center gap-3 rounded-[20px] px-4 py-2.5 text-left text-sm transition ${
-                      active ? "bg-ink text-white" : "bg-white text-ink hover:bg-panel"
-                    }`}
-                  >
-                    <span
-                      className={`flex h-6 w-6 flex-none items-center justify-center rounded-full ${
-                        done ? "bg-mint text-ink" : active ? "bg-white/20" : "bg-panel"
-                      }`}
+            <details ref={pickerRef} className="relative sm:col-span-2 lg:col-span-1">
+              <summary className="flex min-h-[48px] cursor-pointer list-none items-center justify-between gap-2 rounded-2xl bg-ink px-4 text-sm font-semibold text-white lg:mt-[23px] [&::-webkit-details-marker]:hidden">
+                {tickedInScope ? `${tickedInScope} of ${scopeItems.length} questions chosen` : "Choose questions"}
+                <ChevronDown size={16} aria-hidden />
+              </summary>
+              <div className="absolute right-0 z-20 mt-2 w-[min(560px,calc(100vw-40px))] rounded-[24px] bg-white p-3 ring-1 ring-panel">
+                <div className="flex flex-wrap items-center justify-between gap-2 px-2 pb-2">
+                  <p className="text-[13px] text-muted">
+                    Tick the questions you want to practise. With none ticked, you practise all of them.
+                  </p>
+                  <div className="flex gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setTicked(Array.from(new Set([...selected, ...scopeItems.map((i) => i.id)])))}
+                      className="min-h-[44px] rounded-full px-3 text-sm font-semibold hover:bg-panel"
                     >
-                      {done ? <Check size={14} aria-label="practised" /> : null}
-                    </span>
-                    <span className="min-w-0 flex-1">{it.label}</span>
-                    {group === ALL && it.group && groups.length > 1 ? (
-                      <span className={`hidden flex-none text-xs sm:inline ${active ? "text-white/75" : "text-muted"}`}>{it.group}</span>
-                    ) : null}
-                  </button>
-                </li>
-              );
-            })}
-          </ol>
+                      Select all
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTicked(selected.filter((id) => !scopeItems.some((i) => i.id === id)))}
+                      className="min-h-[44px] rounded-full px-3 text-sm font-semibold hover:bg-panel"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                </div>
+                <ul className="flex max-h-[340px] flex-col overflow-y-auto">
+                  {scopeItems.map((it) => (
+                    <li key={it.id}>
+                      <label className="flex min-h-[48px] cursor-pointer items-center gap-3 rounded-2xl px-2 py-2 text-sm hover:bg-ground">
+                        <input
+                          type="checkbox"
+                          checked={selected.includes(it.id)}
+                          onChange={() => toggleTick(it.id)}
+                          className="h-5 w-5 flex-none accent-ink"
+                        />
+                        {/* Full question text here, since this is where you choose; concepts and cases use their name. */}
+                        <span className="min-w-0 flex-1">{it.type === "concept" || it.type === "case" ? it.label : it.text}</span>
+                        {queue.attempted.includes(it.id) ? (
+                          <span className="inline-flex flex-none items-center gap-1 rounded-full bg-mint px-2 py-0.5 text-xs font-semibold">
+                            <Check size={12} aria-hidden /> Practised
+                          </span>
+                        ) : null}
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </details>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm font-medium text-muted" aria-live="polite">
+              {position === -1
+                ? `Not in your chosen questions · ${practiceSet.length} to practise`
+                : `Question ${position + 1} of ${practiceSet.length}${tickedInScope ? " (your choice)" : ""}`}
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => prevItem && goTo(prevItem.id)}
+                disabled={!prevItem}
+                className="inline-flex min-h-[44px] items-center gap-1 rounded-full bg-white px-4 text-sm font-semibold transition hover:bg-panel disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                <ChevronLeft size={16} aria-hidden /> Previous
+              </button>
+              <button
+                type="button"
+                onClick={() => nextItem && goTo(nextItem.id)}
+                disabled={!nextItem}
+                className="inline-flex min-h-[44px] items-center gap-1 rounded-full bg-white px-4 text-sm font-semibold transition hover:bg-panel disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next <ChevronRight size={16} aria-hidden />
+              </button>
+            </div>
+          </div>
 
           <section aria-labelledby="item-h" className="mt-6 flex flex-col gap-4 rounded-[36px] bg-lavender p-7">
             <div className="flex flex-wrap items-center justify-between gap-3">
