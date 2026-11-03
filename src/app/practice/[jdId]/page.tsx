@@ -379,8 +379,11 @@ function PracticeInner() {
                           onChange={() => toggleTick(it.id)}
                           className="h-5 w-5 flex-none accent-ink"
                         />
-                        {/* Full question text here, since this is where you choose; concepts and cases use their name. */}
-                        <span className="min-w-0 flex-1">{it.type === "concept" || it.type === "case" ? it.label : it.text}</span>
+                        {/* Full question text here, since this is where you choose; cases use their title. */}
+                        <span className="min-w-0 flex-1">
+                          {it.type === "concept" ? <strong className="font-semibold">{it.concepts[0]}: </strong> : null}
+                          {it.type === "case" ? it.label : it.text}
+                        </span>
                         {queue.attempted.includes(it.id) ? (
                           <span className="inline-flex flex-none items-center gap-1 rounded-full bg-mint px-2 py-0.5 text-xs font-semibold">
                             <Check size={12} aria-hidden /> Practised

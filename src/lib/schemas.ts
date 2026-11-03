@@ -181,6 +181,31 @@ export const ModelAnswerSchema = z.object({
 });
 export type ModelAnswer = z.infer<typeof ModelAnswerSchema>;
 
+/* ---------- Concept study notes (P12) ---------- */
+
+export const ConceptNotesSchema = z.object({
+  overview: z.string(),
+  key_points: z.array(z.object({ title: z.string(), explanation: z.string(), example: z.string().default("") })),
+  in_this_role: z.string().default(""),
+  common_mistakes: z.array(z.string()).default([]),
+  interview_questions: z.array(z.object({ question: z.string(), how_to_answer: z.string() })).default([]),
+  checklist: z.array(z.string()).default([]),
+});
+export type ConceptNotes = z.infer<typeof ConceptNotesSchema>;
+
+/* ---------- Concept interview questions for practice (P13) ---------- */
+
+export const ConceptQuestionsSchema = z.object({
+  concepts: z.array(
+    z.object({
+      id: z.coerce.number().optional(),
+      name: z.string().default(""),
+      questions: z.array(z.object({ text: z.string(), style: z.string().default("") })),
+    }),
+  ),
+});
+export type ConceptQuestions = z.infer<typeof ConceptQuestionsSchema>;
+
 /* ---------- Kit section names ---------- */
 
 export const KIT_SECTIONS = ["concepts", "questions", "cases", "situational"] as const;

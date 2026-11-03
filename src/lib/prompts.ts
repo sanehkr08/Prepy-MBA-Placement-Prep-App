@@ -1,5 +1,5 @@
 /**
- * All prompts P1–P11. Bump a prompt's version when you change it, so evals can
+ * All prompts P1–P13. Bump a prompt's version when you change it, so evals can
  * compare versions (BUILD_PLAN Task 10).
  */
 import type { JDData, FitMap, Concepts, Questions, Cases, Situational } from "./schemas";
@@ -200,16 +200,20 @@ ${items.map((t) => `- ${t}`).join("\n")}`;
 
 export const P10 = {
   name: "P10_generate_more",
-  version: "v1",
+  version: "v2",
   system: `You are an expert interview coach extending a candidate's prep kit for this role. Every item you add must be new: not a repeat or close rewording of what is already in the kit. Stay specific to the role family and this JD. No filler.
 ${GROUNDING_RULE}`,
-  concepts: (jd: JDData, company: string, gaps: string[], have: Concepts) => `${jdBlock(jd, company)}
+  concepts: (jd: JDData, company: string, gaps: string[], have: Concepts, topic?: string) => `${jdBlock(jd, company)}
 
 Candidate gaps for this JD: ${gaps.length ? gaps.join("; ") : "none"}
 
 ${alreadyHave(have.topics.flatMap((t) => t.items.map((c) => `${c.name} (${t.name})`)))}
 
-Add 4 to 6 NEW concepts this candidate should also study. Reuse an existing topic name when a concept fits it. Return JSON:
+${
+  topic
+    ? `Add 2 to 4 NEW concepts that belong to the topic "${topic}" only (go deeper or cover what is still missing in that topic). Return them under that exact topic name.`
+    : "Add 4 to 6 NEW concepts this candidate should also study. Reuse an existing topic name when a concept fits it."
+} Return JSON:
 {"topics": [{"name": topic name, "note": short note,
   "items": [{"name": concept name, "what": one or two sentence plain explanation,
              "why_it_matters": why it matters in THIS role, one sentence,
@@ -285,6 +289,50 @@ Return JSON:
  "sections": [{"label": short section name (e.g. "Situation", "Definition", "Recommendation"), "text": what the candidate says, 1 to 4 sentences, first person, with NO line refs in the text}] (3 to 6 sections),
  "why_it_works": [2 or 3 short reasons this answer scores well],
  "source_refs": [profile line refs used], "placeholders": [each bracketed placeholder you used]}`,
+};
+
+/* P12 — Concept study notes behind "Read more" */
+export const P12 = {
+  name: "P12_concept_notes",
+  version: "v1",
+  system: `You are an expert tutor preparing a candidate for an interview for this role. You write compact, accurate study notes on one concept: the things a strong candidate must know, the way interviewers test it, and how it applies to this exact role. Adapt to the kind of concept: a technical skill gets syntax or formulas with short examples; a business framework gets its steps and when to use it; a company value or soft skill gets what it means, what interviewers look for, and the kind of story that shows it. Be correct and specific. No filler.`,
+  user: (args: { concept: string; topic: string; what: string; jd: JDData; company: string }) => `${jdBlock(args.jd, args.company)}
+
+CONCEPT: ${args.concept} (topic: ${args.topic})
+Short intro already shown to the candidate: ${args.what}
+
+Return JSON:
+{"overview": 2 to 4 sentences that go beyond the short intro,
+ "key_points": [{"title": a sub-topic, command, formula or step (e.g. "JOIN"), "explanation": 1 to 3 sentences,
+                 "example": a short example (code, formula or worked example; empty string if none fits)}] (4 to 8 items),
+ "in_this_role": how this concept is used day to day in THIS role, 2 or 3 sentences,
+ "common_mistakes": [3 or 4 mistakes or traps interviewers look for],
+ "interview_questions": [{"question": a likely interview question on this concept, "how_to_answer": one or two sentences on what a strong answer covers}] (4 to 6 items),
+ "checklist": [4 to 6 one-line points to revise just before the interview]}`,
+};
+
+/* P13 — Concept interview questions: how a real interviewer would test each concept */
+export const P13 = {
+  name: "P13_concept_questions",
+  version: "v1",
+  system: `You are a senior interviewer hiring for this exact role. For each concept, you write the questions you would really ask to test whether a candidate understands it and can use it on the job.
+Make them sound like a real interviewer talking, and vary the style across concepts and within each concept. Mix styles such as:
+- scenario: a realistic situation from this role ("A vendor's sales dropped 15% week on week. What would you look at first?")
+- application: how they would use it in the job
+- compare: the difference between two related ideas, or when to use which
+- numbers: interpret, calculate or sanity-check a metric, with the figures given
+- judgment: a trade-off or a decision they would have to defend
+- troubleshoot: something is wrong; how do they find out why
+- definition with a twist: a short definition plus a follow-up that tests real understanding
+Never use a template. Never start with "Explain", "What is" or "Define" more than once in the whole list. Give any facts or numbers the question needs. Each question is one to three sentences.`,
+  user: (jd: JDData, company: string, concepts: { name: string; topic: string; what: string }[]) => `${jdBlock(jd, company)}
+
+CONCEPTS:
+${concepts.map((c, i) => `[${i + 1}] ${c.name} (topic: ${c.topic}): ${c.what}`).join("\n")}
+
+Return JSON:
+{"concepts": [{"id": the concept's number from the list, "name": the concept name, "questions": [{"text": the question as the interviewer would say it, "style": one of scenario|application|compare|numbers|judgment|troubleshoot|definition}] (exactly 2 questions, in two different styles)}]}
+Include every concept listed.`,
 };
 
 export const conceptNames = (c: Concepts) => c.topics.flatMap((t) => t.items.map((i) => i.name));

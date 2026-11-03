@@ -2,10 +2,10 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { Lightbulb, CircleHelp, Briefcase, Flag, Star, User, Plus } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Lightbulb, CircleHelp, Briefcase, Flag, Star, User, Plus, BookOpenText, X } from "lucide-react";
 import { api, rememberJD } from "@/lib/client";
-import type { Concepts, Questions, Cases, Situational } from "@/lib/schemas";
+import type { Concepts, Questions, Cases, Situational, ConceptNotes } from "@/lib/schemas";
 import { useProfile } from "@/components/hooks";
 import {
   AppShell,
@@ -114,6 +114,155 @@ function OutlineButton({ jdId, question }: { jdId: string; question: string }) {
   ) : null;
 }
 
+// Code and formulas get a monospace box; worked examples in plain words read better as text.
+const looksLikeCode = (t: string) =>
+  /[;{}]|(SELECT|FROM|WHERE|JOIN|GROUP BY)|=\s*[A-Z]+\(|[A-Za-z_]+\([^)]*\)\s*(=|$)|^\s*[A-Za-z ]+\s=\s/m.test(t);
+
+/** "Read more": full study notes for one concept, in a dialog over the page. */
+function ConceptNotesDialog({
+  jdId,
+  topicIdx,
+  itemIdx,
+  name,
+  topic,
+  onClose,
+}: {
+  jdId: string;
+  topicIdx: number;
+  itemIdx: number;
+  name: string;
+  topic: string;
+  onClose: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const [notes, setNotes] = useState<ConceptNotes | null>(null);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(() => {
+    setErr("");
+    api<{ notes: ConceptNotes }>(`/api/kit/${jdId}/notes`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: topicIdx, item: itemIdx }),
+    })
+      .then((r) => setNotes(r.notes))
+      .catch((e: Error) => setErr(e.message));
+  }, [jdId, topicIdx, itemIdx]);
+
+  useEffect(() => {
+    ref.current?.showModal();
+    void Promise.resolve().then(load);
+  }, [load]);
+
+  const h3 = "mb-2.5 text-[17px] font-medium";
+  return (
+    <dialog
+      ref={ref}
+      onClose={onClose}
+      onClick={(e) => {
+        // A click on the backdrop (the dialog element itself) closes it.
+        if (e.target === ref.current) ref.current?.close();
+      }}
+      aria-labelledby="notes-h"
+      className="m-auto max-h-[88vh] w-[min(780px,calc(100vw-32px))] overflow-y-auto rounded-[32px] bg-ground p-0 text-ink backdrop:bg-ink/40"
+    >
+      <div className="sticky top-0 z-10 flex items-start justify-between gap-4 bg-ground px-6 pb-3 pt-6 md:px-8">
+        <div>
+          <p className="text-[13px] font-semibold text-muted">Study notes · {topic}</p>
+          <h2 id="notes-h" className="mt-1 text-[30px] font-medium leading-tight tracking-[-0.01em]">
+            {name}
+          </h2>
+        </div>
+        <button
+          type="button"
+          onClick={() => ref.current?.close()}
+          className="inline-flex min-h-[44px] flex-none items-center gap-1.5 rounded-full bg-white px-4 text-sm font-semibold hover:bg-panel"
+        >
+          <X size={16} aria-hidden /> Close
+        </button>
+      </div>
+
+      <div className="flex flex-col gap-6 px-6 pb-8 md:px-8">
+        {err ? (
+          <ErrorBox message={err} onRetry={load} />
+        ) : !notes ? (
+          <Spinner label="Writing your study notes… (only the first time)" />
+        ) : (
+          <>
+            <p className="text-[16px] leading-relaxed">{notes.overview}</p>
+
+            <section>
+              <h3 className={h3}>Key topics</h3>
+              <div className="flex flex-col gap-3">
+                {notes.key_points.map((k, i) => (
+                  <article key={i} className="rounded-[20px] bg-white p-4">
+                    <h4 className="text-[16px] font-semibold">{k.title}</h4>
+                    <p className="mt-1 text-[15px]">{k.explanation}</p>
+                    {k.example ? (
+                      looksLikeCode(k.example) ? (
+                        <pre className="mt-2.5 overflow-x-auto whitespace-pre-wrap rounded-2xl bg-panel px-3.5 py-2.5 font-mono text-[13px]">
+                          {k.example}
+                        </pre>
+                      ) : (
+                        <p className="mt-2.5 rounded-2xl bg-panel px-3.5 py-2.5 text-sm">
+                          <strong className="font-semibold">Example:</strong> {k.example}
+                        </p>
+                      )
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            {notes.in_this_role ? (
+              <section className="rounded-[24px] bg-lavender p-5">
+                <h3 className={h3}>How it is used in this role</h3>
+                <p className="text-[15px]">{notes.in_this_role}</p>
+              </section>
+            ) : null}
+
+            {notes.common_mistakes.length ? (
+              <section className="rounded-[24px] bg-pink p-5">
+                <h3 className={h3}>Common mistakes</h3>
+                <ul className="flex list-disc flex-col gap-1.5 pl-5 text-[15px]">
+                  {notes.common_mistakes.map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+
+            {notes.interview_questions.length ? (
+              <section>
+                <h3 className={h3}>Questions you may be asked</h3>
+                <ol className="flex flex-col gap-3">
+                  {notes.interview_questions.map((q, i) => (
+                    <li key={i} className="rounded-[20px] bg-white p-4">
+                      <p className="text-[15px] font-semibold">{q.question}</p>
+                      <p className="mt-1 text-sm text-muted">{q.how_to_answer}</p>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            ) : null}
+
+            {notes.checklist.length ? (
+              <section className="rounded-[24px] bg-mint p-5">
+                <h3 className={h3}>Quick revision checklist</h3>
+                <ul className="flex flex-col gap-1.5 text-[15px]">
+                  {notes.checklist.map((c, i) => (
+                    <li key={i}>· {c}</li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+          </>
+        )}
+      </div>
+    </dialog>
+  );
+}
+
 export default function KitPage() {
   const { jdId } = useParams<{ jdId: string }>();
   const { profile } = useProfile();
@@ -124,7 +273,13 @@ export default function KitPage() {
   const [error, setError] = useState<string | null>(null);
   const [plan, setPlan] = useState<{ items: { id: string; text: string }[]; done: string[] }>({ items: [], done: [] });
   const [revealed, setRevealed] = useState<Record<number, boolean>>({});
-  const [more, setMore] = useState<{ tab: Tab; state: "loading" | "done" | "error"; message: string } | null>(null);
+  const [more, setMore] = useState<{
+    tab: Tab;
+    topic?: string;
+    state: "loading" | "done" | "error";
+    message: string;
+  } | null>(null);
+  const [reading, setReading] = useState<{ ti: number; ci: number } | null>(null);
 
   const loadSection = useCallback(
     async (section: "concepts" | "questions" | "cases" | "situational") => {
@@ -155,27 +310,47 @@ export default function KitPage() {
     if (!have && !error) void Promise.resolve().then(() => loadSection(section));
   }, [section, have, error, loadSection]);
 
-  async function generateMore() {
+  /** `topic`: add concepts to one concept topic only. */
+  async function generateMore(topic?: string) {
     const forTab = tab;
-    setMore({ tab: forTab, state: "loading", message: "" });
+    setMore({ tab: forTab, topic, state: "loading", message: "" });
     try {
       const r = await api<{ data: unknown; added: number }>(`/api/kit/${jdId}/more`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tab: forTab }),
+        body: JSON.stringify({ tab: forTab, topic }),
       });
       setSections((s) => ({ ...s, [TAB_SECTION[forTab]]: r.data }));
       setMore({
         tab: forTab,
+        topic,
         state: "done",
         message: r.added
-          ? `Added ${r.added} new ${MORE_NOUN[forTab]} at the end.`
+          ? `Added ${r.added} new ${MORE_NOUN[forTab]}${topic ? " to this topic" : " at the end"}.`
           : `No new ${MORE_NOUN[forTab]} this time. Try again.`,
       });
       setPlan(await api<typeof plan>(`/api/kit/${jdId}/plan`));
     } catch (e) {
-      setMore({ tab: forTab, state: "error", message: (e as Error).message });
+      setMore({ tab: forTab, topic, state: "error", message: (e as Error).message });
     }
+  }
+
+  /** The Generate More button with its loading, result and error states. */
+  function moreControls(topic?: string) {
+    const mine = more?.tab === tab && more.topic === topic ? more : null;
+    return (
+      <div className="flex flex-col items-start gap-3" aria-live="polite">
+        {mine?.state === "loading" ? (
+          <Spinner label={`Generating more ${MORE_NOUN[tab]}…`} />
+        ) : (
+          <SecondaryButton onClick={() => generateMore(topic)} disabled={more?.state === "loading"}>
+            <Plus size={16} aria-hidden /> Generate More
+          </SecondaryButton>
+        )}
+        {mine?.state === "done" ? <p className="text-sm text-muted">{mine.message}</p> : null}
+        {mine?.state === "error" ? <ErrorBox message={mine.message} onRetry={() => generateMore(topic)} /> : null}
+      </div>
+    );
   }
 
   async function togglePlan(id: string) {
@@ -237,6 +412,16 @@ export default function KitPage() {
 
   return (
     <AppShell active="kit" jdId={jdId} panel={panel}>
+      {reading && concepts?.topics[reading.ti]?.items[reading.ci] ? (
+        <ConceptNotesDialog
+          jdId={jdId}
+          topicIdx={reading.ti}
+          itemIdx={reading.ci}
+          name={concepts.topics[reading.ti].items[reading.ci].name}
+          topic={concepts.topics[reading.ti].name}
+          onClose={() => setReading(null)}
+        />
+      ) : null}
       <PageTitle eyebrow={`Step 4 of 5${jd ? ` · ${jd.role}${jd.company ? ` · ${jd.company}` : ""}` : ""}`}>
         Everything this
         <br />
@@ -281,15 +466,17 @@ export default function KitPage() {
                           <p className="rounded-2xl bg-white/70 px-3.5 py-2.5 text-[13px]">
                             <strong className="font-semibold">Why it matters:</strong> {c.why_it_matters}
                           </p>
-                          <Link
-                            href={`/practice/${jdId}?item=c-${ti}-${ci}`}
-                            className="mt-auto inline-flex min-h-[44px] items-center self-start text-[13px] font-semibold"
+                          <button
+                            type="button"
+                            onClick={() => setReading({ ti, ci })}
+                            className="mt-auto inline-flex min-h-[44px] items-center gap-1.5 self-start rounded-full bg-white px-4 text-[13px] font-semibold hover:bg-white/70"
                           >
-                            Explain it in practice →
-                          </Link>
+                            <BookOpenText size={15} aria-hidden /> Read more
+                          </button>
                         </article>
                       ))}
                     </div>
+                    <div className="mt-4">{moreControls(t.name)}</div>
                   </section>
                 ))}
               </div>
@@ -408,17 +595,7 @@ export default function KitPage() {
               </ol>
             ) : null}
 
-            <div className="mt-6 flex flex-col items-start gap-3" aria-live="polite">
-              {more?.tab === tab && more.state === "loading" ? (
-                <Spinner label={`Generating more ${MORE_NOUN[tab]}…`} />
-              ) : (
-                <SecondaryButton onClick={generateMore} disabled={more?.state === "loading"}>
-                  <Plus size={16} aria-hidden /> Generate More
-                </SecondaryButton>
-              )}
-              {more?.tab === tab && more.state === "done" ? <p className="text-sm text-muted">{more.message}</p> : null}
-              {more?.tab === tab && more.state === "error" ? <ErrorBox message={more.message} onRetry={generateMore} /> : null}
-            </div>
+            {tab !== "concepts" ? <div className="mt-6">{moreControls()}</div> : null}
           </>
         )}
       </div>

@@ -12,6 +12,8 @@ import {
   SituationalSchema,
   OutlineSchema,
   ModelAnswerSchema,
+  ConceptNotesSchema,
+  ConceptQuestionsSchema,
   type FitMap,
   type Concepts,
   type Questions,
@@ -19,9 +21,10 @@ import {
   type Situational,
   type Outline,
   type ModelAnswer,
+  type ConceptNotes,
   type KitSection,
 } from "./schemas";
-import { P3, P4, P5, P6, P7, P8, P10, P11, conceptNames } from "./prompts";
+import { P3, P4, P5, P6, P7, P8, P10, P11, P12, P13, conceptNames } from "./prompts";
 import { profileLines, linesAsPrompt } from "./profile-lines";
 
 export function requireProfile() {
@@ -155,6 +158,57 @@ export async function prefetchKit(jdId: string) {
       return;
     }
   }
+  await ensureConceptQuestions(jdId).catch((err) =>
+    console.warn(`[prefetch] concept questions failed: ${err instanceof Error ? err.message : err}`),
+  );
+}
+
+/* ---------- Concept interview questions for practice ---------- */
+
+type ConceptQuestionMap = Record<string, { text: string; style: string }[]>;
+const CONCEPT_Q_KEY = "concept_questions";
+const CONCEPT_Q_BATCH = 15;
+
+function conceptQuestionMap(jdId: string): ConceptQuestionMap {
+  return (store.getKit(jdId, CONCEPT_Q_KEY)?.data as ConceptQuestionMap | undefined) ?? {};
+}
+
+/**
+ * Real interview questions (two per concept, in varied styles) for the practice page.
+ * Generated once per concept and cached; concepts added later by Generate More get theirs on the next call.
+ */
+export async function ensureConceptQuestions(jdId: string): Promise<void> {
+  const concepts = (await ensureSection(jdId, "concepts")) as Concepts;
+  const have = conceptQuestionMap(jdId);
+  const missing = concepts.topics.flatMap((t) =>
+    t.items.filter((c) => !have[norm(c.name)]?.length).map((c) => ({ name: c.name, topic: t.name, what: c.what })),
+  );
+  if (!missing.length) return;
+  await once(`concept-q:${jdId}`, async () => {
+    const jd = requireJD(jdId);
+    for (let i = 0; i < missing.length; i += CONCEPT_Q_BATCH) {
+      const batch = missing.slice(i, i + CONCEPT_Q_BATCH);
+      const out = await callLLM({
+        name: P13.name,
+        version: P13.version,
+        system: P13.system,
+        user: P13.user(jd.data, jd.company, batch),
+        schema: ConceptQuestionsSchema,
+        maxTokens: 4000,
+      });
+      const map = conceptQuestionMap(jdId);
+      for (const c of out.concepts) {
+        // Match by the number we gave each concept; fall back to the name (the model may add text to it).
+        const n = norm(c.name);
+        const concept =
+          (c.id ? batch[c.id - 1] : undefined) ??
+          batch.find((b) => n === norm(b.name) || n.startsWith(norm(b.name) + " "));
+        const qs = c.questions.filter((q) => q.text.trim()).slice(0, 2);
+        if (concept && qs.length) map[norm(concept.name)] = qs;
+      }
+      store.saveKit(jdId, CONCEPT_Q_KEY, map, P13.version);
+    }
+  });
 }
 
 /* ---------- Generate More: add new items to a section without repeating ---------- */
@@ -172,8 +226,13 @@ export const MORE_SECTION: Record<MoreTab, KitSection> = {
 
 const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
-export async function generateMore(jdId: string, tab: MoreTab): Promise<{ data: unknown; added: number }> {
-  return once(`more:${jdId}:${tab}`, async () => {
+/** `topic` (concepts only) adds new concepts to that one topic. */
+export async function generateMore(
+  jdId: string,
+  tab: MoreTab,
+  topic?: string,
+): Promise<{ data: unknown; added: number }> {
+  return once(`more:${jdId}:${tab}:${topic ?? ""}`, async () => {
     const section = MORE_SECTION[tab];
     const current = await ensureSection(jdId, section);
     const jd = requireJD(jdId);
@@ -187,7 +246,13 @@ export async function generateMore(jdId: string, tab: MoreTab): Promise<{ data: 
       const cur = current as Concepts;
       const fit = await ensureFit(jdId);
       const gaps = fit.items.filter((i) => i.label !== "Strong").map((i) => i.requirement);
-      const more = await callLLM({ ...base, user: P10.concepts(jd.data, jd.company, gaps, cur), schema: ConceptsSchema });
+      const target = topic ? cur.topics.find((t) => norm(t.name) === norm(topic)) : undefined;
+      if (topic && !target) throw new LLMError("no topic", "That concept topic was not found.", 404);
+      const more = await callLLM({
+        ...base,
+        user: P10.concepts(jd.data, jd.company, gaps, cur, target?.name),
+        schema: ConceptsSchema,
+      });
       const seen = new Set(cur.topics.flatMap((t) => t.items.map((c) => norm(c.name))));
       // Append so existing ids (c-topic-item) used by practice and the study plan stay stable.
       const topics = cur.topics.map((t) => ({ ...t, items: [...t.items] }));
@@ -195,7 +260,10 @@ export async function generateMore(jdId: string, tab: MoreTab): Promise<{ data: 
         const items = t.items.filter((c) => !seen.has(norm(c.name)) && seen.add(norm(c.name)));
         if (!items.length) continue;
         added += items.length;
-        const same = topics.find((x) => norm(x.name) === norm(t.name));
+        // A per-topic request always lands in that topic, whatever name the model used.
+        const same = target
+          ? topics.find((x) => x.name === target.name)
+          : topics.find((x) => norm(x.name) === norm(t.name));
         if (same) same.items.push(...items);
         else topics.push({ ...t, items });
       }
@@ -299,6 +367,30 @@ export async function ensureModelAnswer(jdId: string, itemId: string): Promise<M
   });
 }
 
+/** Study notes for one concept ("Read more"), cached by concept name. */
+export async function ensureConceptNotes(jdId: string, topicIdx: number, itemIdx: number): Promise<ConceptNotes> {
+  const concepts = (await ensureSection(jdId, "concepts")) as Concepts;
+  const topic = concepts.topics[topicIdx];
+  const concept = topic?.items[itemIdx];
+  if (!topic || !concept) throw new LLMError("no concept", "That concept was not found.", 404);
+  const key = "notes:" + concept.name.slice(0, 200);
+  const cached = store.getKit(jdId, key);
+  if (cached) return cached.data as ConceptNotes;
+  return once(`${jdId}:${key}`, async () => {
+    const jd = requireJD(jdId);
+    const data = await callLLM({
+      name: P12.name,
+      version: P12.version,
+      system: P12.system,
+      user: P12.user({ concept: concept.name, topic: topic.name, what: concept.what, jd: jd.data, company: jd.company }),
+      schema: ConceptNotesSchema,
+      maxTokens: 4000,
+    });
+    store.saveKit(jdId, key, data, P12.version);
+    return data;
+  });
+}
+
 /* ---------- Practice items and study plan (built in code) ---------- */
 
 /** Practice categories match the prep kit tabs; `group` is the subcategory inside one. */
@@ -326,19 +418,26 @@ export function practiceItems(jdId: string): PracticeItem[] {
   const sit = store.getKit(jdId, "situational")?.data as Situational | undefined;
 
   // Ids are positional (c-topic-item, q-n, …) and stay stable because Generate More only appends.
+  // Each concept gets the interviewer-style questions from P13; until they exist, one plain fallback.
+  const conceptQs = conceptQuestionMap(jdId);
   concepts?.topics.forEach((t, ti) =>
-    t.items.forEach((c, ci) =>
-      items.push({
-        id: `c-${ti}-${ci}`,
-        type: "concept",
-        category: "concepts",
-        group: t.name,
-        label: c.name,
-        text: `Explain "${c.name}" as you would to an interviewer, and say why it matters in this role.`,
-        hint: c.what,
-        concepts: [c.name],
-      }),
-    ),
+    t.items.forEach((c, ci) => {
+      const qs = conceptQs[norm(c.name)] ?? [
+        { text: `How would you use ${c.name} in this role? Walk me through a real example.`, style: "" },
+      ];
+      qs.forEach((q, qi) =>
+        items.push({
+          id: qi === 0 ? `c-${ti}-${ci}` : `c-${ti}-${ci}-${qi + 1}`,
+          type: "concept",
+          category: "concepts",
+          group: t.name,
+          label: `${c.name}: ${short(q.text, 70)}`,
+          text: q.text,
+          hint: c.what,
+          concepts: [c.name],
+        }),
+      );
+    }),
   );
   const qs = questions?.questions.map((q, i) => ({ q, i })) ?? [];
   qs.filter(({ q }) => q.category === "role_knowledge" || q.category === "technical").forEach(({ q, i }) =>

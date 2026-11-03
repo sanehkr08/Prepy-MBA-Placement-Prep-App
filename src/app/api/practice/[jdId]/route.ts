@@ -1,5 +1,5 @@
 import { errorResponse } from "@/lib/llm";
-import { ensureSection, practiceItems, requireJD } from "@/lib/prep";
+import { ensureConceptQuestions, ensureSection, practiceItems, requireJD } from "@/lib/prep";
 import { KIT_SECTIONS } from "@/lib/schemas";
 import { store } from "@/lib/store";
 
@@ -9,6 +9,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ jdId: s
     const { jdId } = await params;
     const jd = requireJD(jdId);
     for (const s of KIT_SECTIONS) await ensureSection(jdId, s);
+    // Interview-style questions for each concept. If this fails, practice still works with a plain fallback.
+    await ensureConceptQuestions(jdId).catch((err) => console.warn(`[practice] concept questions: ${err}`));
     const attempts = store.listAttempts(jdId);
     const attempted = Array.from(new Set(attempts.map((a) => a.item_id)));
     return Response.json({

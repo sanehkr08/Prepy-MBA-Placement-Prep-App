@@ -50,7 +50,7 @@ prepy/
     app/
       page.tsx                         Setup: resume + JD (steps 1–2)
       fit/[jdId]/page.tsx              Fit and Gap Map
-      kit/[jdId]/page.tsx              Role prep kit (6 tabs, answer outlines, study plan)
+      kit/[jdId]/page.tsx              Role prep kit (6 tabs, Read more study notes per concept, Generate More per concept topic, answer outlines, study plan)
       practice/[jdId]/page.tsx         Practice: kit categories → subcategories → question list; typed + voice dictation, undo/redo, rubric feedback
       tutor/page.tsx                   v1 placeholder for the voice AI tutor
       api/
@@ -59,10 +59,11 @@ prepy/
         jd/route.ts                    GET list, POST add JD → P2 parse
         fit/[jdId]/route.ts            GET fit map (P3), cached; ?refresh=1; then prefetches the kit in the background
         kit/[jdId]/[section]/route.ts  GET concepts | questions | cases | situational (P4–P7), cached
-        kit/[jdId]/more/route.ts       POST Generate More: new, non-repeating items for one kit tab (P10)
+        kit/[jdId]/more/route.ts       POST Generate More: new, non-repeating items for one kit tab, or one concept topic (P10)
+        kit/[jdId]/notes/route.ts      POST Read more: study notes for one concept (P12), cached
         kit/[jdId]/outline/route.ts    POST STAR outline for one question (P8)
         kit/[jdId]/plan/route.ts       GET / PUT study plan
-        practice/[jdId]/route.ts       GET practice queue
+        practice/[jdId]/route.ts       GET practice queue (builds two interview-style questions per concept, P13)
         practice/score/route.ts        POST score an answer (P9), saves attempt
         practice/model/route.ts        POST model answer for one practice item, in the candidate's voice (P11)
         data/route.ts                  DELETE all data
@@ -70,7 +71,7 @@ prepy/
     components/   ui.tsx (shell, rail, Back/Next step bar, chips, cards, buttons), ProfileEditor.tsx, hooks.ts (useProfile, useDictation, useUndoableText)
     lib/
       llm.ts            callLLM (JSON + Zod + one retry + logging), errorResponse
-      prompts.ts        P1–P11 with versions + GROUNDING_RULE
+      prompts.ts        P1–P13 with versions + GROUNDING_RULE
       prep.ts           orchestration, caching, in-flight request sharing, kit prefetch, Generate More, grounding guards, practice queue, study plan
       profile-lines.ts  numbered profile lines (ED1, EX1.B2, AC1…) used for citations
       schemas.ts        Zod schemas
