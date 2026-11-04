@@ -51,7 +51,10 @@ prepy/
     app/
       signin/                          Sign in / create account (Google + email/password)
       onboarding/page.tsx              First sign-in: upload resume or enter details → profile
-      page.tsx                         Setup: resume + JD (steps 1–2)
+      page.tsx                         Home: random time-of-day greeting (src/lib/greetings.ts), two paths: Prepare for a role / Prepare for your JD
+      jd/page.tsx                      Prepare for your JD: add a JD, earlier JDs
+      profile/page.tsx                 View / edit profile, replace from a new resume, delete all data
+      role/[slug]/page.tsx             Prepare for a role (roles in src/lib/roles.ts); placeholder until v1 step 3
       fit/[jdId]/page.tsx              Fit and Gap Map
       kit/[jdId]/page.tsx              Role prep kit (6 tabs, Read more study notes per concept, Generate More per concept topic, answer outlines, study plan)
       practice/[jdId]/page.tsx         Practice: kit categories → subcategories → question list; typed + voice dictation, undo/redo, rubric feedback
@@ -150,7 +153,7 @@ Free-tier note: on Gemini's free tier, Google may use prompts and outputs to imp
 
 ## 9. Out of scope for the MVP
 
-Video answers, RAG over case books, deployment beyond an optional Vercel preview. (Version 1 plan, in order: accounts and onboarding (done), home page with greeting and two paths, Prepare for a role, mock interview, impromptu speaking, group discussion.)
+Video answers, RAG over case books, deployment beyond an optional Vercel preview. (Version 1 plan, in order: accounts and onboarding (done), home page with greeting and two paths (done), Prepare for a role, mock interview, impromptu speaking, group discussion.)
 
 ## 10. Build status
 

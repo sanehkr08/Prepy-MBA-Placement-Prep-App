@@ -293,7 +293,7 @@ function PracticeInner() {
 
   return (
     <AppShell active="practice" jdId={jdId} panel={panel}>
-      <PageTitle eyebrow={`Step 5 of 5${queue ? ` · ${queue.jd.role}${queue.jd.company ? ` · ${queue.jd.company}` : ""}` : ""}`}>
+      <PageTitle eyebrow={`Step 4 of 4${queue ? ` · ${queue.jd.role}${queue.jd.company ? ` · ${queue.jd.company}` : ""}` : ""}`}>
         Practice
       </PageTitle>
 

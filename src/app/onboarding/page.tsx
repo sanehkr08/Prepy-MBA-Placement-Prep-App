@@ -10,6 +10,7 @@ import { useProfile } from "@/components/hooks";
 import {
   ErrorBox,
   IconCircle,
+  Logo,
   PrimaryButton,
   SecondaryButton,
   Spinner,
@@ -84,10 +85,7 @@ export default function OnboardingPage() {
   return (
     <main className="min-h-screen bg-ground px-4 py-10 md:px-10">
       <div className="mx-auto flex max-w-[880px] flex-col gap-8">
-        <div className="flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ink text-[22px] font-bold text-white">P</span>
-          <span className="text-[22px] font-medium">Prepy</span>
-        </div>
+        <Logo size={48} wordmark />
 
         <header>
           <p className="text-sm font-medium text-muted">

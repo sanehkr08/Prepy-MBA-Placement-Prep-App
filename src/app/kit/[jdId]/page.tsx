@@ -422,7 +422,7 @@ export default function KitPage() {
           onClose={() => setReading(null)}
         />
       ) : null}
-      <PageTitle eyebrow={`Step 4 of 5${jd ? ` · ${jd.role}${jd.company ? ` · ${jd.company}` : ""}` : ""}`}>
+      <PageTitle eyebrow={`Step 3 of 4${jd ? ` · ${jd.role}${jd.company ? ` · ${jd.company}` : ""}` : ""}`}>
         Everything this
         <br />
         role needs you to know

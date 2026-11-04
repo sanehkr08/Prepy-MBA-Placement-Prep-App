@@ -112,15 +112,15 @@ export default function FitPage() {
           </Link>
         </PanelCard>
       ) : null}
-      <Link href="/" className="inline-flex min-h-[44px] items-center self-center text-sm font-medium">
-        Edit profile or add another JD
+      <Link href="/jd" className="inline-flex min-h-[44px] items-center self-center text-sm font-medium">
+        Add another JD
       </Link>
     </>
   );
 
   return (
     <AppShell active="fit" jdId={jdId} panel={panel}>
-      <PageTitle eyebrow={`Step 3 of 5${data?.jd.company ? ` · ${data.jd.company}` : ""}`}>
+      <PageTitle eyebrow={`Step 2 of 4${data?.jd.company ? ` · ${data.jd.company}` : ""}`}>
         How you fit
         <br />
         {data?.jd.role ?? "…"}

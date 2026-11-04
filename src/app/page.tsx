@@ -2,369 +2,196 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
-import { Briefcase, Upload, User, Trash2 } from "lucide-react";
-import { api, rememberJD } from "@/lib/client";
-import type { Profile } from "@/lib/schemas";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { ArrowRight, Briefcase, Compass } from "lucide-react";
+import { pickGreeting } from "@/lib/greetings";
+import { ROLES } from "@/lib/roles";
 import { useProfile } from "@/components/hooks";
-import { ProfileEditor, cleanProfile } from "@/components/ProfileEditor";
-import {
-  AppShell,
-  PageTitle,
-  ProfileBadge,
-  PanelCard,
-  IconCircle,
-  PrimaryButton,
-  SecondaryButton,
-  ErrorBox,
-  Spinner,
-  fieldInput,
-  fieldLabel,
-} from "@/components/ui";
+import { AppShell, IconCircle, Logo } from "@/components/ui";
+import { JDForm } from "@/components/JDForm";
+import { JDHistory } from "@/components/JDHistory";
 
-type JDItem = { id: string; company: string; role: string; created_at: string; overall_label: string | null };
+const LAST_GREETING = "prepy:last-greeting";
+const GREETING_MAX_PX = 34;
+const GREETING_MIN_PX = 20;
 
-export default function SetupPage() {
+/**
+ * Keep a heading on one line: start at the largest size and step down until it fits.
+ * On screens too narrow even at the smallest size, let it wrap.
+ */
+function useOneLine(text: string | null) {
+  const ref = useRef<HTMLHeadingElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el || !text) return;
+    const fit = () => {
+      el.style.whiteSpace = "nowrap";
+      let size = GREETING_MAX_PX;
+      el.style.fontSize = `${size}px`;
+      while (el.scrollWidth > el.clientWidth && size > GREETING_MIN_PX) {
+        size -= 1;
+        el.style.fontSize = `${size}px`;
+      }
+      if (el.scrollWidth > el.clientWidth) el.style.whiteSpace = "normal";
+    };
+    fit();
+    window.addEventListener("resize", fit);
+    return () => window.removeEventListener("resize", fit);
+  }, [text]);
+  return ref;
+}
+
+/** Home: a greeting, then the two ways to prepare (a common role, or your own JD). */
+export default function HomePage() {
   const router = useRouter();
-  const { profile, setProfile, loaded } = useProfile();
-  const [draft, setDraft] = useState<Profile | null>(null);
-  const [rawText, setRawText] = useState("");
-  const [editing, setEditing] = useState(false);
-  const [resumeText, setResumeText] = useState("");
-  const [parsing, setParsing] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [profileError, setProfileError] = useState<string | null>(null);
-  const resumeFile = useRef<HTMLInputElement>(null);
-
-  const [company, setCompany] = useState("");
-  const [role, setRole] = useState("");
-  const [jdText, setJdText] = useState("");
-  const [jdFileName, setJdFileName] = useState("");
-  const jdFile = useRef<HTMLInputElement>(null);
-  const [jdBusy, setJdBusy] = useState(false);
-  const [jdError, setJdError] = useState<string | null>(null);
-  const [jds, setJds] = useState<JDItem[]>([]);
+  const { profile, loaded } = useProfile();
+  const [greeting, setGreeting] = useState<string | null>(null);
+  const [customRole, setCustomRole] = useState("");
+  const greetingRef = useOneLine(greeting);
 
   // New accounts set up their profile first.
   useEffect(() => {
     if (loaded && !profile) router.replace("/onboarding");
   }, [loaded, profile, router]);
 
+  // A fresh greeting on every visit, never the same line twice in a row.
+  // Picked after mount: the time of day and the random pick belong to the browser.
   useEffect(() => {
-    api<{ jds: JDItem[] }>("/api/jd")
-      .then((r) => setJds(r.jds))
-      .catch(() => setJds([]));
-  }, []);
-
-  async function parseResume() {
-    setProfileError(null);
-    const form = new FormData();
-    const f = resumeFile.current?.files?.[0];
-    if (f) form.append("file", f);
-    form.append("text", resumeText);
-    setParsing(true);
+    if (!profile) return;
+    let last: string | undefined;
     try {
-      const r = await api<{ profile: Profile; raw_text: string }>("/api/resume", { method: "POST", body: form });
-      setDraft(r.profile);
-      setRawText(r.raw_text);
-      setEditing(true);
-    } catch (e) {
-      setProfileError((e as Error).message);
-    } finally {
-      setParsing(false);
-    }
-  }
-
-  async function saveProfile() {
-    if (!draft) return;
-    setSaving(true);
-    setProfileError(null);
-    try {
-      const r = await api<{ profile: NonNullable<typeof profile> }>("/api/profile", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profile: cleanProfile(draft), raw_text: rawText || undefined }),
-      });
-      setProfile(r.profile);
-      setEditing(false);
-      setDraft(null);
-    } catch (e) {
-      setProfileError((e as Error).message);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function addJD() {
-    setJdError(null);
-    const form = new FormData();
-    form.append("company", company);
-    form.append("role", role);
-    form.append("text", jdText);
-    const f = jdFile.current?.files?.[0];
-    if (f) form.append("file", f);
-    setJdBusy(true);
-    try {
-      const r = await api<{ jd: { id: string } }>("/api/jd", { method: "POST", body: form });
-      rememberJD(r.jd.id);
-      router.push(`/fit/${r.jd.id}`);
-    } catch (e) {
-      setJdError((e as Error).message);
-      setJdBusy(false);
-    }
-  }
-
-  async function deleteAll() {
-    if (!window.confirm("Delete your profile, all job descriptions, prep kits and practice answers? This cannot be undone.")) return;
-    await api("/api/data", { method: "DELETE" });
-    try {
-      localStorage.clear();
+      last = sessionStorage.getItem(LAST_GREETING) ?? undefined;
     } catch {
-      /* ignore */
+      /* storage unavailable */
     }
-    setProfile(null);
-    setJds([]);
-    setDraft(null);
-    setEditing(false);
-  }
+    const g = pickGreeting(profile.data.name.split(" ")[0], new Date(), last);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setGreeting(g);
+    try {
+      sessionStorage.setItem(LAST_GREETING, g);
+    } catch {
+      /* storage unavailable */
+    }
+  }, [profile]);
 
-  const showEditor = editing && draft;
-  const hasProfile = !!profile;
+  return (
+    <AppShell active="home">
+      {/* Logo centred; the empty first column balances the profile chip on the right. */}
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <span aria-hidden />
+        <Logo size={44} wordmark />
+        {profile ? (
+          <Link
+            href="/profile"
+            className="inline-flex min-h-[44px] items-center gap-2.5 justify-self-end rounded-full bg-white py-1 pl-1 pr-4 text-sm font-semibold no-underline hover:bg-panel"
+          >
+            <span aria-hidden className="flex h-9 w-9 items-center justify-center rounded-full bg-lavender text-[15px] font-semibold">
+              {profile.data.name.trim().charAt(0).toUpperCase() || "?"}
+            </span>
+            {profile.data.name.split(" ")[0] || "Profile"}
+          </Link>
+        ) : null}
+      </div>
 
-  const panel = (
-    <>
-      <ProfileBadge name={profile?.data.name} headline={profile?.data.headline} />
-      <PanelCard title="How Prepy works">
-        <ol className="flex flex-col gap-3">
-          {[
-            ["bg-mint", "3", "See how each JD requirement matches you"],
-            ["bg-pink", "4", "Study the role: concepts, questions, cases"],
-            ["bg-lavender", "5", "Practise by typing or speaking, get scored"],
-          ].map(([bg, n, t]) => (
-            <li key={n} className="flex items-center gap-3">
-              <span className={`flex h-9 w-9 flex-none items-center justify-center rounded-full font-bold ${bg}`}>{n}</span>
-              <span>{t}</span>
-            </li>
-          ))}
-        </ol>
-      </PanelCard>
-      <PanelCard title="Earlier dossiers">
-        {jds.length === 0 ? (
-          <p className="text-sm">Your saved job descriptions will appear here.</p>
-        ) : (
-          <ul className="flex flex-col">
-            {jds.map((j) => (
-              <li key={j.id}>
+      <header className="mt-10 text-center">
+        <h1
+          ref={greetingRef}
+          aria-live="polite"
+          style={{ fontSize: GREETING_MAX_PX }}
+          className={`min-h-[1.3em] overflow-hidden font-light leading-[1.25] tracking-[-0.015em] transition-opacity duration-500 ${
+            greeting ? "opacity-100" : "opacity-0"
+          }`}
+        >
+          {greeting ?? "Hello"}
+        </h1>
+        <p className="mt-2.5 text-[17px] text-muted">What are we preparing for today?</p>
+      </header>
+
+      <div className="mt-9 grid items-start gap-5 lg:grid-cols-2">
+        {/* Path 1: a common role, no JD needed */}
+        <section aria-labelledby="role-h" className="flex flex-col gap-4 rounded-[32px] bg-lavender p-6 md:p-7">
+          <div className="flex items-center gap-2.5">
+            <IconCircle>
+              <Compass size={18} strokeWidth={1.7} aria-hidden />
+            </IconCircle>
+            <span className="text-[13px] font-medium">No JD yet? Start here</span>
+          </div>
+          <h2 id="role-h" className="text-[28px] font-medium leading-tight tracking-[-0.01em]">
+            Prepare for a role
+          </h2>
+          <p className="text-[15px]">
+            Pick a role. Prepy builds its concepts, practice questions and mock interviews, mapped to your resume.
+          </p>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const name = customRole.trim();
+              if (name) router.push(`/role/custom?name=${encodeURIComponent(name)}`);
+            }}
+            className="flex flex-col gap-1.5"
+          >
+            <label htmlFor="custom-role" className="text-[13px] font-semibold">
+              Type the role you want to prepare for
+            </label>
+            <div className="flex flex-wrap gap-2">
+              <input
+                id="custom-role"
+                value={customRole}
+                onChange={(e) => setCustomRole(e.target.value)}
+                placeholder="e.g. Category Manager, Strategy Analyst, Product Marketing Manager"
+                maxLength={80}
+                className="min-h-[48px] min-w-0 flex-[1_1_240px] rounded-2xl bg-white px-4 text-[15px] text-ink outline-none ring-1 ring-transparent focus:ring-ink"
+              />
+              <button
+                type="submit"
+                disabled={!customRole.trim()}
+                className="inline-flex min-h-[48px] items-center gap-2 rounded-full bg-ink px-5 text-sm font-semibold text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Prepare <ArrowRight size={16} aria-hidden />
+              </button>
+            </div>
+          </form>
+          <p className="text-[13px] font-semibold">Or pick a popular role</p>
+          <ul className="grid gap-2.5 sm:grid-cols-2">
+            {ROLES.map((r) => (
+              <li key={r.slug}>
                 <Link
-                  href={`/fit/${j.id}`}
-                  onClick={() => rememberJD(j.id)}
-                  className="flex min-h-[48px] items-center justify-between gap-3 rounded-2xl px-2 py-2 no-underline hover:bg-ground"
+                  href={`/role/${r.slug}`}
+                  className="flex min-h-[64px] flex-col justify-center rounded-[20px] bg-white px-4 py-2.5 no-underline transition hover:bg-ground"
                 >
-                  <span>
-                    <span className="block text-sm font-semibold">{j.role}</span>
-                    <span className="block text-xs text-muted">
-                      {j.company || "Company not given"} · {new Date(j.created_at).toLocaleDateString()}
-                    </span>
-                  </span>
-                  {j.overall_label ? (
-                    <span className="rounded-full bg-peach px-2.5 py-1 text-xs font-bold">{j.overall_label}</span>
-                  ) : null}
+                  <span className="text-[15px] font-semibold">{r.name}</span>
+                  <span className="text-[12px] text-muted">{r.blurb}</span>
                 </Link>
               </li>
             ))}
           </ul>
-        )}
-      </PanelCard>
-      {hasProfile ? (
-        <button
-          type="button"
-          onClick={deleteAll}
-          className="inline-flex min-h-[44px] items-center justify-center gap-2 self-center rounded-full px-4 text-sm font-medium text-muted hover:text-ink"
-        >
-          <Trash2 size={16} aria-hidden /> Delete all my data
-        </button>
-      ) : null}
-    </>
-  );
-
-  return (
-    <AppShell active="setup" panel={panel}>
-      <PageTitle eyebrow="Steps 1–2 of 5">
-        Drop a JD.
-        <br />
-        See how you fit.
-      </PageTitle>
-      <p className="mt-3.5 max-w-[640px] text-[17px] text-muted">
-        Your resume is read once and saved. Any role works: area sales manager, account executive, business analyst,
-        product manager and more.
-      </p>
-
-      <div className="mt-8 grid grid-cols-[repeat(auto-fit,minmax(340px,1fr))] items-start gap-5">
-        {/* Step 1: resume */}
-        <section aria-labelledby="resume-h" className="flex flex-col gap-4 rounded-[32px] bg-lavender p-6">
-          <div className="flex items-center gap-2.5">
-            <IconCircle>
-              <User size={18} strokeWidth={1.7} aria-hidden />
-            </IconCircle>
-            <span className="text-[13px] font-medium">Step 1 · Your resume</span>
-          </div>
-
-          {!loaded ? (
-            <Spinner label="Loading your profile…" />
-          ) : showEditor ? (
-            <>
-              <h2 id="resume-h" className="text-[28px] font-medium leading-tight tracking-[-0.01em]">
-                Check what Prepy understood
-              </h2>
-              <p className="text-sm">
-                Fix anything that is wrong or missing. Prepy only uses what is saved here when it writes about you.
-              </p>
-              <ProfileEditor value={draft} onChange={setDraft} />
-              {profileError ? <ErrorBox message={profileError} /> : null}
-              <div className="flex flex-wrap gap-3">
-                <PrimaryButton onClick={saveProfile} disabled={saving}>
-                  {saving ? "Saving…" : "Save profile"}
-                </PrimaryButton>
-                <SecondaryButton
-                  onClick={() => {
-                    setEditing(false);
-                    setDraft(null);
-                  }}
-                >
-                  Cancel
-                </SecondaryButton>
-              </div>
-            </>
-          ) : hasProfile ? (
-            <>
-              <h2 id="resume-h" className="text-[28px] font-medium leading-tight tracking-[-0.01em]">
-                Profile saved
-              </h2>
-              <div className="rounded-[20px] bg-white p-4 text-sm">
-                <p className="font-semibold">{profile.data.name || "Your profile"}</p>
-                <p className="text-muted">{profile.data.headline}</p>
-                <p className="mt-2">
-                  {profile.data.experience.length} experience entries · {profile.data.education.length} education ·{" "}
-                  {profile.data.achievements.length} achievements
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <SecondaryButton
-                  onClick={() => {
-                    setDraft(profile.data);
-                    setEditing(true);
-                  }}
-                >
-                  Edit profile
-                </SecondaryButton>
-                <SecondaryButton
-                  onClick={() => {
-                    setDraft(null);
-                    setEditing(false);
-                    setProfile(null);
-                  }}
-                >
-                  Replace resume
-                </SecondaryButton>
-              </div>
-            </>
-          ) : (
-            <>
-              <h2 id="resume-h" className="text-[28px] font-medium leading-tight tracking-[-0.01em]">
-                Upload your resume
-              </h2>
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="resume-file" className={fieldLabel}>
-                  PDF, DOCX or TXT, up to 5 MB
-                </label>
-                <input
-                  id="resume-file"
-                  ref={resumeFile}
-                  type="file"
-                  accept=".pdf,.docx,.txt"
-                  className="rounded-2xl bg-white/85 p-3 text-sm file:mr-3 file:min-h-[40px] file:rounded-full file:border-0 file:bg-ink file:px-4 file:text-white"
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <label htmlFor="resume-text" className={fieldLabel}>
-                  Or paste the text
-                </label>
-                <textarea
-                  id="resume-text"
-                  rows={6}
-                  className={fieldInput}
-                  value={resumeText}
-                  onChange={(e) => setResumeText(e.target.value)}
-                />
-              </div>
-              {profileError ? <ErrorBox message={profileError} /> : null}
-              <div>
-                <PrimaryButton onClick={parseResume} disabled={parsing}>
-                  <Upload size={16} aria-hidden />
-                  {parsing ? "Reading your resume…" : "Read my resume"}
-                </PrimaryButton>
-              </div>
-            </>
-          )}
         </section>
 
-        {/* Step 2: JD */}
-        <section aria-labelledby="jd-h" className="flex flex-col gap-4 rounded-[32px] bg-peach p-6">
+        {/* Path 2: the user's own JD */}
+        <section aria-labelledby="jd-h" className="flex flex-col gap-4 rounded-[32px] bg-peach p-6 md:p-7">
           <div className="flex items-center gap-2.5">
             <IconCircle>
               <Briefcase size={18} strokeWidth={1.7} aria-hidden />
             </IconCircle>
-            <span className="text-[13px] font-medium">Step 2 · Job description</span>
+            <span className="text-[13px] font-medium">Got a JD? Go deeper</span>
           </div>
-          <h2 id="jd-h" className="text-[28px] font-medium leading-tight tracking-[-0.01em]">
-            Add the role you are interviewing for
-          </h2>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="company" className={fieldLabel}>
-                Company
-              </label>
-              <input id="company" className={fieldInput} value={company} onChange={(e) => setCompany(e.target.value)} />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label htmlFor="role" className={fieldLabel}>
-                Role
-              </label>
-              <input
-                id="role"
-                className={fieldInput}
-                placeholder="e.g. Area Sales Manager"
-                value={role}
-                onChange={(e) => setRole(e.target.value)}
-              />
-            </div>
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="jd" className={fieldLabel}>
-              Paste the JD
-            </label>
-            <textarea id="jd" rows={10} className={fieldInput} value={jdText} onChange={(e) => setJdText(e.target.value)} />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="jd-file" className={fieldLabel}>
-              Or upload the JD as a PDF {jdFileName ? `· ${jdFileName}` : ""}
-            </label>
-            <input
-              id="jd-file"
-              ref={jdFile}
-              type="file"
-              accept=".pdf,.docx,.txt"
-              onChange={(e) => setJdFileName(e.target.files?.[0]?.name ?? "")}
-              className="rounded-2xl bg-white/85 p-3 text-sm file:mr-3 file:min-h-[40px] file:rounded-full file:border-0 file:bg-ink file:px-4 file:text-white"
-            />
-          </div>
-          {!hasProfile ? <p className="text-sm font-medium">Save your profile first, then add a JD.</p> : null}
-          {jdError ? <ErrorBox message={jdError} /> : null}
-          <div>
-            <PrimaryButton onClick={addJD} disabled={!hasProfile || jdBusy || !role.trim()}>
-              {jdBusy ? "Reading the JD…" : "Analyse my fit →"}
-            </PrimaryButton>
-          </div>
+          <JDForm
+            idPrefix="home-jd"
+            rows={5}
+            disabled={!profile}
+            heading={
+              <h2 id="jd-h" className="text-[28px] font-medium leading-tight tracking-[-0.01em]">
+                Prepare for your JD
+              </h2>
+            }
+            intro={
+              <p className="text-[15px]">
+                Upload or paste a job description. See how you fit, get a prep kit for that exact role, and practise with
+                scored feedback.
+              </p>
+            }
+          />
+          <JDHistory hrefFor={(id) => `/kit/${id}`} limit={4} title="Pick up where you left off" />
         </section>
       </div>
     </AppShell>

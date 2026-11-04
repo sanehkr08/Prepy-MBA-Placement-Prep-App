@@ -1,8 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState, type ReactNode } from "react";
-import { FileText, Target, BookOpen, Mic, AudioLines, LoaderCircle, ArrowLeft, ArrowRight, LogOut } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { House, FileText, Target, BookOpen, Mic, AudioLines, LoaderCircle, ArrowLeft, ArrowRight, LogOut, UserRound } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { lastJD } from "@/lib/client";
 
@@ -16,7 +17,23 @@ export const pastelBg: Record<Pastel, string> = {
   white: "bg-white",
 };
 
-type RailKey = "setup" | "fit" | "kit" | "practice" | "tutor";
+/** The Prepy mark (public/logo-mark.png), optionally with the wordmark beside it. */
+export function Logo({ size = 44, wordmark = false, light = false }: { size?: number; wordmark?: boolean; light?: boolean }) {
+  return (
+    <span className="inline-flex items-center gap-2.5">
+      <Image
+        src={light ? "/logo-mark-white.png" : "/logo-mark.png"}
+        alt={wordmark ? "" : "Prepy"}
+        width={size}
+        height={size}
+        priority
+      />
+      {wordmark ? <span className="text-[22px] font-semibold tracking-[-0.01em]">Prepy</span> : null}
+    </span>
+  );
+}
+
+type RailKey = "home" | "setup" | "fit" | "kit" | "practice" | "tutor" | "profile";
 
 function RailLink({
   href,
@@ -67,14 +84,13 @@ export function SideRail({ active, jdId }: { active: RailKey; jdId?: string | nu
   const id = useStepJD(jdId);
   return (
     <nav aria-label="Prep steps" className="flex flex-row items-center gap-3 px-4 pt-6 md:w-[88px] md:flex-none md:flex-col md:px-0 md:pt-7">
-      <Link
-        href="/"
-        aria-label="Prepy home"
-        className="mr-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-ink text-[22px] font-bold text-white md:mr-0 md:mb-4"
-      >
-        P
+      <Link href="/" aria-label="Prepy home" className="mr-2 flex h-12 w-12 items-center justify-center md:mr-0 md:mb-4">
+        <Logo size={44} />
       </Link>
-      <RailLink href="/" label="Resume and JD" active={active === "setup"}>
+      <RailLink href="/" label="Home" active={active === "home"}>
+        <House size={22} strokeWidth={1.6} />
+      </RailLink>
+      <RailLink href="/jd" label="Your JD" active={active === "setup"}>
         <FileText size={22} strokeWidth={1.6} />
       </RailLink>
       <RailLink href={`/fit/${id}`} label="Fit and gap map" active={active === "fit"} disabled={!id}>
@@ -90,12 +106,16 @@ export function SideRail({ active, jdId }: { active: RailKey; jdId?: string | nu
       <RailLink href="/tutor" label="Talk to Prepy (voice tutor)" active={active === "tutor"} accent>
         <AudioLines size={22} strokeWidth={1.6} />
       </RailLink>
+      <span className="ml-auto md:ml-0 md:mt-auto" />
+      <RailLink href="/profile" label="Your profile" active={active === "profile"}>
+        <UserRound size={22} strokeWidth={1.6} />
+      </RailLink>
       <button
         type="button"
         onClick={() => void signOut({ redirectTo: "/signin" })}
         aria-label="Sign out"
         title="Sign out"
-        className="ml-auto flex h-[52px] w-[52px] items-center justify-center rounded-full bg-white text-ink transition hover:bg-panel md:ml-0 md:mt-auto md:mb-7"
+        className="flex h-[52px] w-[52px] items-center justify-center rounded-full bg-white text-ink transition hover:bg-panel md:mb-7"
       >
         <LogOut size={20} strokeWidth={1.6} />
       </button>
@@ -104,7 +124,8 @@ export function SideRail({ active, jdId }: { active: RailKey; jdId?: string | nu
 }
 
 const STEPS: { key: RailKey; label: string; href: (id: string) => string }[] = [
-  { key: "setup", label: "Resume and JD", href: () => "/" },
+  { key: "home", label: "Home", href: () => "/" },
+  { key: "setup", label: "Your JD", href: () => "/jd" },
   { key: "fit", label: "Fit map", href: (id) => `/fit/${id}` },
   { key: "kit", label: "Prep kit", href: (id) => `/kit/${id}` },
   { key: "practice", label: "Practice", href: (id) => `/practice/${id}` },
@@ -114,7 +135,8 @@ const STEPS: { key: RailKey; label: string; href: (id: string) => string }[] = [
 export function StepNav({ active, jdId }: { active: RailKey; jdId?: string | null }) {
   const id = useStepJD(jdId);
   const i = STEPS.findIndex((s) => s.key === active);
-  if (i === -1) return null;
+  // Home is the start of the flow, not a step with its own Back/Next bar.
+  if (i <= 0) return null;
   const back = STEPS[i - 1];
   // Every step after setup needs a JD.
   const next = id ? STEPS[i + 1] : undefined;
@@ -292,3 +314,68 @@ export function ErrorBox({ message, onRetry }: { message: string; onRetry?: () =
 export const fieldLabel = "text-[13px] font-semibold";
 export const fieldInput =
   "w-full rounded-2xl border-0 bg-white/85 px-3.5 py-3 text-[15px] text-ink outline-none ring-1 ring-transparent focus:ring-ink";
+
+/** A modal "Are you sure?" box. Rendered only while open; Esc or the backdrop cancels. */
+export function ConfirmDialog({
+  title,
+  message,
+  confirmLabel,
+  busy = false,
+  error,
+  onConfirm,
+  onCancel,
+}: {
+  title: string;
+  message: ReactNode;
+  confirmLabel: string;
+  busy?: boolean;
+  error?: string | null;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    ref.current?.showModal();
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      onCancel={(e) => {
+        e.preventDefault();
+        if (!busy) onCancel();
+      }}
+      onClick={(e) => {
+        if (e.target === ref.current && !busy) onCancel();
+      }}
+      aria-labelledby="confirm-h"
+      className="m-auto w-[min(440px,calc(100vw-32px))] rounded-[28px] bg-ground p-0 text-ink backdrop:bg-ink/40"
+    >
+      <div className="flex flex-col gap-4 p-6">
+        <h2 id="confirm-h" className="text-[24px] font-medium leading-tight">
+          {title}
+        </h2>
+        <div className="text-[15px]">{message}</div>
+        {error ? <ErrorBox message={error} /> : null}
+        <div className="flex flex-wrap justify-end gap-2.5">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={busy}
+            className="inline-flex min-h-[48px] items-center rounded-full bg-white px-5 text-sm font-semibold hover:bg-panel disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={busy}
+            autoFocus
+            className="inline-flex min-h-[48px] items-center rounded-full bg-ink px-5 text-sm font-semibold text-white hover:bg-black disabled:opacity-50"
+          >
+            {busy ? "Deleting…" : confirmLabel}
+          </button>
+        </div>
+      </div>
+    </dialog>
+  );
+}

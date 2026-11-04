@@ -35,3 +35,12 @@ export function lastJD(): string | null {
     return null;
   }
 }
+
+/** After a JD is deleted, stop the rail and step bar from pointing at it. */
+export function forgetJD(id: string) {
+  try {
+    if (localStorage.getItem(LAST_JD_KEY) === id) localStorage.removeItem(LAST_JD_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}

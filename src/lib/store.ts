@@ -108,6 +108,20 @@ export const store = {
     }));
   },
 
+  /** Delete one JD and everything built from it (fit map, kit, plan, practice). False if not found. */
+  deleteJD: (id: string): boolean => {
+    const user = uid();
+    return transaction(() => {
+      const gone = db().prepare("DELETE FROM jds WHERE id = ? AND user_id = ?").run(id, user).changes > 0;
+      if (gone) {
+        for (const t of ["fit_maps", "kits", "plans", "attempts"]) {
+          db().prepare(`DELETE FROM ${t} WHERE user_id = ? AND jd_id = ?`).run(user, id);
+        }
+      }
+      return gone;
+    });
+  },
+
   /* fit maps */
   getFitMap: (jdId: string) => {
     const r = db().prepare("SELECT data, created_at FROM fit_maps WHERE user_id = ? AND jd_id = ?").get(uid(), jdId) as

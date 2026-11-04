@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { signIn } from "next-auth/react";
 import { api } from "@/lib/client";
-import { ErrorBox, PrimaryButton, fieldInput, fieldLabel } from "@/components/ui";
+import { ErrorBox, Logo, PrimaryButton, fieldInput, fieldLabel } from "@/components/ui";
 
 type Mode = "signin" | "signup";
 
@@ -85,10 +85,7 @@ export function SignInForm({
   return (
     <main className="flex min-h-screen items-center justify-center bg-ground px-4 py-10">
       <div className="flex w-full max-w-[440px] flex-col gap-7">
-        <div className="flex items-center gap-3">
-          <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-ink text-[22px] font-bold text-white">P</span>
-          <span className="text-[22px] font-medium">Prepy</span>
-        </div>
+        <Logo size={48} wordmark />
         <header>
           <h1 className="text-[44px] font-light leading-[1.02] tracking-[-0.02em]">
             {mode === "signin" ? "Welcome back" : "Create your account"}
