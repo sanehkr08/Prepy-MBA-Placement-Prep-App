@@ -120,7 +120,7 @@ async function migrate(conn: Client) {
 }
 
 // Bump when SCHEMA or migrate() changes, so a running server applies it without a restart.
-const SCHEMA_VERSION = 6;
+const SCHEMA_VERSION = 7;
 
 // One client per server process (kept on globalThis so dev hot reloads reuse it).
 const g = globalThis as unknown as { prepyDb?: Client; prepySchema?: { version: number; ready: Promise<void> } };
@@ -141,6 +141,12 @@ async function client(): Promise<Client> {
   // A hot reload keeps the old client, so schema changes are applied here, not only on connect.
   if (g.prepySchema?.version !== SCHEMA_VERSION) {
     const ready = (async () => {
+      if (!usingTurso()) {
+        // Classic journal mode: reads leave the files untouched. In WAL mode every read updates
+        // prepy.db-shm, and the dev server (which watches the whole project, data/ included) reloads
+        // the page on each change, which reads again: an endless reload loop.
+        await conn.execute("PRAGMA journal_mode = DELETE").catch(() => undefined);
+      }
       await conn.executeMultiple(SCHEMA);
       await migrate(conn);
     })();
