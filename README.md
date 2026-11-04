@@ -14,10 +14,9 @@
   Next.js 16 · TypeScript · Tailwind CSS · SQLite · Auth.js · Gemini / Groq / Claude · Zod · Web Speech API
 </p>
 
-<!--
-  Screenshots: save images in docs/screenshots/ and add them here, e.g.
-  ![Home](docs/screenshots/home.png)
--->
+<p align="center">
+  <img src="docs/screenshots/home.png" alt="Prepy home page: a time-of-day greeting, Prepare for a role, and Prepare for your JD" width="100%" />
+</p>
 
 ---
 
@@ -38,6 +37,35 @@ MBA placement season compresses dozens of interviews, across very different role
 | 7 | **Group discussion** | Practise alone, or with 2–3 AI members who each have a distinct style (analyst, devil's advocate, consensus builder) over three rounds. Feedback on content, participation, building on others, clarity and leadership. |
 
 Plus accounts (Google or email), onboarding from a resume, a sectioned profile, history for every practice mode, and a home page with a fresh, slightly cheeky MBA-flavoured greeting on every visit.
+
+## Screenshots
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/prep-kit.png" alt="Role prep kit: concepts grouped by topic, each marked by priority and whether it covers a gap" /></td>
+    <td width="50%"><img src="docs/screenshots/prep-kit-cases.png" alt="Prep kit Cases tab: a role-specific case study with a framework hint and a solution" /></td>
+  </tr>
+  <tr>
+    <td><strong>Role prep kit.</strong> Concepts grouped by topic, with priority and the gaps they cover.</td>
+    <td><strong>Cases.</strong> Role-specific case studies with a framework hint, solved in practice.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/practice.png" alt="Practice: category and subcategory dropdowns, the question, and an answer box with voice input and undo/redo" /></td>
+    <td><img src="docs/screenshots/mock-interview.png" alt="Mock interview set-up: length, time per question, speaking or typing, and questions read aloud" /></td>
+  </tr>
+  <tr>
+    <td><strong>Practice.</strong> Pick a category, answer by speaking or typing, get rubric scores and a model answer.</td>
+    <td><strong>Mock interviews.</strong> Timed questions read aloud, follow-ups, and a full scorecard.</td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/group-discussion.png" alt="Group discussion set-up: choose 0, 2 or 3 AI participants, and a freshly generated GD topic" /></td>
+    <td><img src="docs/screenshots/impromptu-speaking.png" alt="Impromptu speaking set-up: topic types, prep time, speaking time, and answer mode" /></td>
+  </tr>
+  <tr>
+    <td><strong>Group discussion.</strong> Practise alone or with 2–3 AI members over three rounds.</td>
+    <td><strong>Impromptu speaking.</strong> A fresh topic, a prep countdown, then pace and filler-word feedback.</td>
+  </tr>
+</table>
 
 ## How the AI is kept honest
 
