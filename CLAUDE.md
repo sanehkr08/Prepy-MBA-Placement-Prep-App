@@ -57,7 +57,13 @@ prepy/
       fit/[jdId]/page.tsx              Fit and Gap Map
       kit/[jdId]/page.tsx              Role prep kit (6 tabs, Read more study notes per concept, Generate More per concept topic, answer outlines, study plan)
       practice/[jdId]/page.tsx         Practice: kit categories → subcategories → question list; typed + voice dictation, undo/redo, rubric feedback
-      tutor/page.tsx                   v1 placeholder for the voice AI tutor
+      mock/[jdId]/page.tsx             Mock interview set-up (5/8/10 questions, 2–4 min each, speak or type, read aloud) + past scorecards
+      mock/session/[id]/               Interview runner (timer, browser text-to-speech, dictation, follow-ups) and Scorecard.tsx
+      kits/page.tsx                    My prep kits: every role and JD kit
+      mocks/page.tsx                   Mock interviews across all kits
+      guide/page.tsx                   How Prepy works
+      progress/ impromptu/ gd/ stories/ drill/   Planned features: placeholder pages (components/ComingSoon.tsx)
+      tutor/page.tsx                   Ask Prepy: v1 placeholder for the voice AI tutor (floating "Ask Prepy" button on every page)
       api/
         auth/[...nextauth]/route.ts    Auth.js endpoints
         register/route.ts              POST email/password sign-up
@@ -76,17 +82,22 @@ prepy/
         practice/[jdId]/route.ts       GET practice queue (builds two interview-style questions per concept, P13)
         practice/score/route.ts        POST score an answer (P9), saves attempt
         practice/model/route.ts        POST model answer for one practice item, in the candidate's voice (P11)
+        mock/route.ts                  GET finished mocks for a kit (?jdId=), POST start one
+        mock/[id]/route.ts             GET one mock (questions, answers, scorecard)
+        mock/[id]/answer/route.ts      POST an answer; a main answer may return a follow-up (P15)
+        mock/[id]/finish/route.ts      POST score the whole interview (P16)
         data/route.ts                  DELETE all data
         health/llm/route.ts            GET quick API-key check
     components/   ui.tsx (shell, rail, Back/Next step bar, chips, cards, buttons), ProfileEditor.tsx, hooks.ts (useProfile, useDictation, useUndoableText)
     lib/
       llm.ts            callLLM (JSON + Zod + one retry + logging), errorResponse
-      prompts.ts        P1–P14 with versions + GROUNDING_RULE
+      prompts.ts        P1–P16 with versions + GROUNDING_RULE
       prep.ts           orchestration, caching, in-flight request sharing, kit prefetch, Generate More, grounding guards, practice queue, study plan
       profile-lines.ts  numbered profile lines (ED1, EX1.B2, AC1…) used for citations
       schemas.ts        Zod schemas
       db.ts             SQLite connection + schema
-      store.ts          per-user data store (same API as the MVP's JSON store)
+      store.ts          per-user data store (same API as the MVP's JSON store); mock interviews in the mocks table
+      mock.ts           mock interviews: question mix per length, follow-ups, scorecard
       users.ts          accounts, password hashing, one-time import of data/prepy.json into the first account
       user-context.ts   runAsUser / currentUserId (AsyncLocalStorage)
       api-auth.ts       withUser(): signed-in check + user scope for API routes
@@ -112,7 +123,7 @@ prepy/
 
 - Radius: cards 32px, side panel 40px, inner boxes and inputs 16–20px, pills and buttons fully rounded.
 - Type: DM Sans. Page headline 68px weight 300, tight leading, letter-spacing -0.02em. Card titles 21–28px weight 500. Body 15px.
-- Layout: left icon rail (88px) · main column · right panel (~340px). On narrow screens they stack.
+- Layout: left sidebar · main column · right panel (~340px). On narrow screens they stack. Two sidebars (`AppShell nav`): `home` = labelled sidebar (Prepare / Practice / You) on home, profile and pages not tied to one kit; `kit` = 88px icon rail inside a JD or role kit (fit, kit, practice, mock).
 - Chips: pill with a 40px white icon circle on the left; the active chip is ink with white text.
 - Strong / Partial / Gap always shows a **text label** as well as a colour.
 - Touch targets at least 44px. Real `<button>`, `<a>`, `<label>` + `<input>`.
@@ -154,7 +165,7 @@ Free-tier note: on Gemini's free tier, Google may use prompts and outputs to imp
 
 ## 9. Out of scope for the MVP
 
-Video answers, RAG over case books, deployment beyond an optional Vercel preview. (Version 1 plan, in order: accounts and onboarding (done), home page with greeting and two paths (done), Prepare for a role (done), mock interview, impromptu speaking, group discussion.)
+Video answers, RAG over case books, deployment beyond an optional Vercel preview. (Version 1 plan, in order: accounts and onboarding (done), home page with greeting and two paths (done), Prepare for a role (done), mock interview (done), impromptu speaking, group discussion.)
 
 ## 10. Build status
 

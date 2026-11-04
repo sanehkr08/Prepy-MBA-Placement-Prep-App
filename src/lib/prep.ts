@@ -490,6 +490,17 @@ export function practiceItems(jdId: string): PracticeItem[] {
       concepts: [],
     }),
   );
+  // Every interview opens with this one; it is also a mock interview's first question.
+  items.push({
+    id: "intro-0",
+    type: "resume",
+    category: "resume",
+    group: "Introduction",
+    label: "Tell me about yourself",
+    text: "Tell me about yourself, and why you want this role.",
+    hint: "About two minutes: who you are, two or three highlights from your resume that fit this role, and why this role now.",
+    concepts: [],
+  });
   qs.filter(({ q }) => q.category === "resume" || q.category === "gap").forEach(({ q, i }) =>
     items.push({
       id: `q-${i}`,

@@ -37,6 +37,26 @@ export type AttemptRecord = {
   created_at: string;
 };
 
+/** One mock interview: its questions, the answers given, and the scorecard once finished. */
+export type MockQuestion = {
+  item_id: string;
+  type: string;
+  label: string;
+  text: string;
+  followup_eligible: boolean;
+  answer: string;
+  followup: string; // the interviewer's follow-up question ("" if none)
+  followup_answer: string;
+  input_mode: "typed" | "voice";
+};
+export type MockData = {
+  length: number;
+  seconds_per_question: number;
+  questions: MockQuestion[];
+  result: unknown | null; // MockScore when finished
+};
+export type MockRecord = { id: string; jd_id: string; data: MockData; created_at: string; finished_at: string | null };
+
 export type LLMCallRecord = {
   prompt_name: string;
   prompt_version: string;
@@ -126,7 +146,7 @@ export const store = {
     return transaction(() => {
       const gone = db().prepare("DELETE FROM jds WHERE id = ? AND user_id = ?").run(id, user).changes > 0;
       if (gone) {
-        for (const t of ["fit_maps", "kits", "plans", "attempts"]) {
+        for (const t of ["fit_maps", "kits", "plans", "attempts", "mocks"]) {
           db().prepare(`DELETE FROM ${t} WHERE user_id = ? AND jd_id = ?`).run(user, id);
         }
       }
@@ -213,6 +233,62 @@ export const store = {
       created_at: String(r.created_at),
     })),
 
+  /* mock interviews */
+  createMock: (jdId: string, data: MockData): MockRecord => {
+    const rec: MockRecord = { id: randomUUID().slice(0, 8), jd_id: jdId, data, created_at: now(), finished_at: null };
+    db()
+      .prepare("INSERT INTO mocks (id, user_id, jd_id, data, created_at) VALUES (?, ?, ?, ?, ?)")
+      .run(rec.id, uid(), jdId, JSON.stringify(data), rec.created_at);
+    return rec;
+  },
+  getMock: (id: string): MockRecord | null => {
+    const r = db().prepare("SELECT * FROM mocks WHERE id = ? AND user_id = ?").get(id, uid()) as Row | undefined;
+    return r
+      ? {
+          id: String(r.id),
+          jd_id: String(r.jd_id),
+          data: json<MockData>(r.data),
+          created_at: String(r.created_at),
+          finished_at: r.finished_at ? String(r.finished_at) : null,
+        }
+      : null;
+  },
+  saveMock: (id: string, data: MockData, finished = false) => {
+    db()
+      .prepare("UPDATE mocks SET data = ?, finished_at = CASE WHEN ? THEN ? ELSE finished_at END WHERE id = ? AND user_id = ?")
+      .run(JSON.stringify(data), finished ? 1 : 0, now(), id, uid());
+  },
+  listMocks: (jdId: string): MockRecord[] =>
+    (
+      db()
+        .prepare("SELECT * FROM mocks WHERE user_id = ? AND jd_id = ? AND finished_at IS NOT NULL ORDER BY created_at DESC")
+        .all(uid(), jdId) as Row[]
+    ).map((r) => ({
+      id: String(r.id),
+      jd_id: String(r.jd_id),
+      data: json<MockData>(r.data),
+      created_at: String(r.created_at),
+      finished_at: r.finished_at ? String(r.finished_at) : null,
+    })),
+
+  /** Every finished mock interview, newest first, with the kit it belongs to. */
+  listAllMocks: () =>
+    (
+      db()
+        .prepare(
+          `SELECT m.id, m.jd_id, m.data, m.created_at, j.role, j.company, j.kind
+           FROM mocks m JOIN jds j ON j.id = m.jd_id AND j.user_id = m.user_id
+           WHERE m.user_id = ? AND m.finished_at IS NOT NULL ORDER BY m.created_at DESC`,
+        )
+        .all(uid()) as Row[]
+    ).map((r) => ({
+      id: String(r.id),
+      jd_id: String(r.jd_id),
+      data: json<MockData>(r.data),
+      created_at: String(r.created_at),
+      kit: { role: String(r.role), company: String(r.company), kind: (r.kind === "role" ? "role" : "jd") as JDKind },
+    })),
+
   /* llm call log (also written by health checks, so the user is optional) */
   logLLMCall: (c: Omit<LLMCallRecord, "created_at">) => {
     db()
@@ -227,7 +303,7 @@ export const store = {
   deleteAll: () => {
     const id = uid();
     transaction(() => {
-      for (const t of ["profiles", "jds", "fit_maps", "kits", "plans", "attempts", "llm_calls"]) {
+      for (const t of ["profiles", "jds", "fit_maps", "kits", "plans", "attempts", "mocks", "llm_calls"]) {
         db().prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(id);
       }
     });

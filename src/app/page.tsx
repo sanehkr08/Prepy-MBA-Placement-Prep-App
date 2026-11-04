@@ -75,22 +75,9 @@ export default function HomePage() {
   }, [profile]);
 
   return (
-    <AppShell active="home">
-      {/* Logo centred; the empty first column balances the profile chip on the right. */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-        <span aria-hidden />
+    <AppShell active="home" nav="home">
+      <div className="flex justify-center">
         <Logo size={44} wordmark />
-        {profile ? (
-          <Link
-            href="/profile"
-            className="inline-flex min-h-[44px] items-center gap-2.5 justify-self-end rounded-full bg-white py-1 pl-1 pr-4 text-sm font-semibold no-underline hover:bg-panel"
-          >
-            <span aria-hidden className="flex h-9 w-9 items-center justify-center rounded-full bg-lavender text-[15px] font-semibold">
-              {profile.data.name.trim().charAt(0).toUpperCase() || "?"}
-            </span>
-            {profile.data.name.split(" ")[0] || "Profile"}
-          </Link>
-        ) : null}
       </div>
 
       <header className="mt-10 text-center">

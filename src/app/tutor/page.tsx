@@ -26,7 +26,7 @@ export default function TutorPage() {
       <div className="flex flex-wrap items-center gap-2.5">
         <span className="rounded-full bg-peach px-2.5 py-1 text-xs font-bold">Coming in v1</span>
       </div>
-      <PageTitle>Talk to Prepy</PageTitle>
+      <PageTitle>Ask Prepy</PageTitle>
       <p className="mt-3.5 max-w-[640px] text-[17px] text-muted">
         A voice tutor that knows your profile, the JD and your prep kit. It answers your questions, runs spoken mock
         interviews, quizzes you, and coaches your delivery.

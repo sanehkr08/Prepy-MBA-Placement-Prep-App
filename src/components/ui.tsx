@@ -3,7 +3,27 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { House, Target, BookOpen, Mic, AudioLines, LoaderCircle, ArrowLeft, ArrowRight, LogOut, UserRound } from "lucide-react";
+import {
+  House,
+  Users,
+  Target,
+  BookOpen,
+  Mic,
+  AudioLines,
+  LoaderCircle,
+  ArrowLeft,
+  ArrowRight,
+  LogOut,
+  UserRound,
+  Layers,
+  TrendingUp,
+  Zap,
+  MessagesSquare,
+  BookMarked,
+  CalendarCheck,
+  CircleHelp,
+  type LucideIcon,
+} from "lucide-react";
 import { signOut } from "next-auth/react";
 import { lastJD } from "@/lib/client";
 
@@ -33,7 +53,99 @@ export function Logo({ size = 44, wordmark = false, light = false }: { size?: nu
   );
 }
 
-type RailKey = "home" | "fit" | "kit" | "practice" | "tutor" | "profile";
+type RailKey =
+  | "home"
+  | "fit"
+  | "kit"
+  | "practice"
+  | "mock"
+  | "tutor"
+  | "profile"
+  | "kits"
+  | "mocks"
+  | "progress"
+  | "impromptu"
+  | "gd"
+  | "stories"
+  | "drill"
+  | "guide";
+
+/* ---------- Home sidebar: everything about you and your prep overall (not one kit) ---------- */
+
+const HOME_NAV: { title: string; items: { key: RailKey; label: string; href: string; icon: LucideIcon }[] }[] = [
+  {
+    title: "Prepare",
+    items: [
+      { key: "home", label: "Home", href: "/", icon: House },
+      { key: "kits", label: "My prep kits", href: "/kits", icon: Layers },
+      { key: "mocks", label: "Mock interviews", href: "/mocks", icon: Users },
+      { key: "progress", label: "My progress", href: "/progress", icon: TrendingUp },
+    ],
+  },
+  {
+    title: "Practice",
+    items: [
+      { key: "impromptu", label: "Impromptu speaking", href: "/impromptu", icon: Zap },
+      { key: "gd", label: "Group discussion", href: "/gd", icon: MessagesSquare },
+      { key: "stories", label: "Story bank", href: "/stories", icon: BookMarked },
+      { key: "drill", label: "Daily drill", href: "/drill", icon: CalendarCheck },
+    ],
+  },
+  {
+    title: "You",
+    items: [
+      { key: "profile", label: "Profile", href: "/profile", icon: UserRound },
+      { key: "guide", label: "How Prepy works", href: "/guide", icon: CircleHelp },
+    ],
+  },
+];
+
+/** The labelled sidebar on home, profile and the other pages not tied to one kit. */
+function HomeNav({ active }: { active: RailKey }) {
+  return (
+    <nav
+      aria-label="Prepy"
+      className="flex flex-row items-center gap-2 overflow-x-auto px-4 pt-5 md:sticky md:top-0 md:h-screen md:w-[248px] md:flex-none md:flex-col md:items-stretch md:gap-0 md:overflow-y-auto md:px-4 md:py-7"
+    >
+      <Link href="/" aria-label="Prepy home" className="mr-2 flex flex-none items-center md:mb-6 md:ml-2 md:mr-0">
+        <Logo size={36} />
+      </Link>
+      {HOME_NAV.map((group) => (
+        <div key={group.title} className="flex flex-none flex-row gap-2 md:mb-5 md:flex-col md:gap-1">
+          <p className="hidden px-3 pb-1 text-[12px] font-semibold uppercase tracking-wide text-muted md:block">{group.title}</p>
+          {group.items.map(({ key, label, href, icon: Icon }) => {
+            const on = active === key;
+            return (
+              <Link
+                key={key}
+                href={href}
+                aria-current={on ? "page" : undefined}
+                className={`flex min-h-[44px] flex-none items-center gap-3 whitespace-nowrap rounded-full py-1.5 pl-1.5 pr-4 text-[14px] font-semibold no-underline transition ${
+                  on ? "bg-ink text-white" : "text-ink hover:bg-white"
+                }`}
+              >
+                <span className={`flex h-8 w-8 flex-none items-center justify-center rounded-full ${on ? "bg-white text-ink" : "bg-white"}`}>
+                  <Icon size={16} strokeWidth={1.7} aria-hidden />
+                </span>
+                {label}
+              </Link>
+            );
+          })}
+        </div>
+      ))}
+      <button
+        type="button"
+        onClick={() => void signOut({ redirectTo: "/signin" })}
+        className="flex min-h-[44px] flex-none items-center gap-3 whitespace-nowrap rounded-full py-1.5 pl-1.5 pr-4 text-[14px] font-semibold text-muted transition hover:bg-white hover:text-ink md:mt-auto"
+      >
+        <span className="flex h-8 w-8 flex-none items-center justify-center rounded-full bg-white">
+          <LogOut size={16} strokeWidth={1.7} aria-hidden />
+        </span>
+        Sign out
+      </button>
+    </nav>
+  );
+}
 
 function RailLink({
   href,
@@ -99,9 +211,8 @@ export function SideRail({ active, jdId }: { active: RailKey; jdId?: string | nu
       <RailLink href={`/practice/${id}`} label="Practice" active={active === "practice"} disabled={!id}>
         <Mic size={22} strokeWidth={1.6} />
       </RailLink>
-      <span className="md:mt-2" />
-      <RailLink href="/tutor" label="Talk to Prepy (voice tutor)" active={active === "tutor"} accent>
-        <AudioLines size={22} strokeWidth={1.6} />
+      <RailLink href={`/mock/${id}`} label="Mock interview" active={active === "mock"} disabled={!id}>
+        <Users size={22} strokeWidth={1.6} />
       </RailLink>
       <span className="ml-auto md:ml-0 md:mt-auto" />
       <RailLink href="/profile" label="Your profile" active={active === "profile"}>
@@ -155,21 +266,44 @@ export function StepNav({ active, jdId }: { active: RailKey; jdId?: string | nul
   );
 }
 
+/** "Ask Prepy" (the voice tutor), pinned to the bottom-right corner of every page. */
+function AskPrepy() {
+  return (
+    <Link
+      href="/tutor"
+      aria-label="Ask Prepy"
+      className="fixed bottom-5 right-5 z-30 inline-flex min-h-[52px] items-center gap-2.5 rounded-full bg-peach py-1.5 pl-1.5 pr-5 text-[15px] font-semibold text-ink no-underline shadow-[0_6px_24px_rgba(28,27,31,0.14)] transition hover:brightness-[0.97]"
+    >
+      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white">
+        <AudioLines size={20} strokeWidth={1.7} aria-hidden />
+      </span>
+      Ask Prepy
+    </Link>
+  );
+}
+
+/**
+ * Page layout: left sidebar · main column · optional right panel.
+ * `nav="kit"` (default): the icon rail for one JD or role kit (fit, kit, practice, mock).
+ * `nav="home"`: the labelled sidebar for home, profile and pages not tied to one kit.
+ */
 export function AppShell({
   active,
   jdId,
   panel,
+  nav = "kit",
   children,
 }: {
   active: RailKey;
   jdId?: string | null;
   panel?: ReactNode;
+  nav?: "kit" | "home";
   children: ReactNode;
 }) {
   return (
     <div className="flex min-h-screen flex-col bg-ground md:flex-row md:flex-wrap">
-      <SideRail active={active} jdId={jdId} />
-      <main className="min-w-0 flex-[999_1_560px] px-5 pb-16 pt-8 md:px-8 md:pt-10">
+      {nav === "home" ? <HomeNav active={active} /> : <SideRail active={active} jdId={jdId} />}
+      <main className="min-w-0 flex-[999_1_560px] px-5 pb-28 pt-8 md:px-8 md:pt-10">
         <StepNav active={active} jdId={jdId} />
         {children}
       </main>
@@ -178,6 +312,7 @@ export function AppShell({
           {panel}
         </aside>
       ) : null}
+      {active === "tutor" ? null : <AskPrepy />}
     </div>
   );
 }

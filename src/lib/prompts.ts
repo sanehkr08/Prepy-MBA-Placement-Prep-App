@@ -1,5 +1,5 @@
 /**
- * All prompts P1–P14. Bump a prompt's version when you change it, so evals can
+ * All prompts P1–P16. Bump a prompt's version when you change it, so evals can
  * compare versions (BUILD_PLAN Task 10).
  */
 import type { JDData, FitMap, Concepts, Questions, Cases, Situational } from "./schemas";
@@ -351,6 +351,58 @@ Return JSON:
  "responsibilities": [the typical day-to-day responsibilities] (6 to 8),
  "competencies": [behavioural competencies the role needs] (5 to 7),
  "company_context": "General preparation for this role, not tied to one company."}`,
+};
+
+/* P15 — Mock interview follow-up: one probing question about the candidate's answer */
+export const P15 = {
+  name: "P15_mock_followup",
+  version: "v1",
+  system: `You are a senior interviewer in a live interview for this role. After the candidate answers, you ask ONE short follow-up, the way a real interviewer probes: ask for the impact or a number, why they chose that approach, what they would do differently, how they handled a specific obstacle, or challenge one assumption.
+Base it only on what the candidate actually said. Never assume facts about them. If the answer is very short or empty, ask them to walk you through one specific part.
+One sentence, spoken style, no preamble.`,
+  user: (args: { jd: JDData; company: string; question: string; answer: string }) => `${jdBlock(args.jd, args.company)}
+
+INTERVIEW QUESTION: ${args.question}
+
+CANDIDATE ANSWER (may be a speech transcript):
+"""
+${args.answer || "(no answer)"}
+"""
+
+Return JSON: {"followup": your one follow-up question}`,
+};
+
+/* P16 — Mock interview scorecard: the whole interview, scored on the practice rubric */
+export const P16 = {
+  name: "P16_mock_scorecard",
+  version: "v1",
+  system: `You are a fair, demanding interview panel scoring a complete mock interview for this role. Score each answer 1 to 5 on structure, relevance (to the question and this role), evidence_or_concepts (real evidence for personal questions, correct role concepts for knowledge and case questions), and clarity. A follow-up answer counts as part of its question. An empty or off-topic answer scores 1.
+Then judge the whole interview like a hiring panel: an overall score out of 100 and a verdict.
+Write every piece of feedback (summary, strengths, improvements, comments) to the candidate directly, as "you", never "the candidate".
+Never invent experience for the candidate: when suggesting a better answer, use placeholders like [your example] or [add metric] for personal details.
+Answers may be speech transcripts: ignore small transcription errors.`,
+  user: (args: {
+    jd: JDData;
+    company: string;
+    items: { index: number; type: string; question: string; answer: string; followup: string; followup_answer: string }[];
+  }) => `${jdBlock(args.jd, args.company)}
+
+THE INTERVIEW:
+${args.items
+  .map(
+    (q) => `[${q.index}] (${q.type}) Q: ${q.question}
+A: ${q.answer || "(no answer)"}${q.followup ? `\nFollow-up: ${q.followup}\nA: ${q.followup_answer || "(no answer)"}` : ""}`,
+  )
+  .join("\n\n")}
+
+Return JSON:
+{"overall_score": 0-100,
+ "verdict": one of "Strong hire signal", "Likely to advance", "Borderline", "Needs more practice",
+ "summary": two sentences on how the interview went overall,
+ "strengths": [2 or 3 specific strengths, citing what they said],
+ "improvements": [3 specific, actionable things to fix, most important first],
+ "questions": [{"index": the question number, "scores": {"structure": 1-5, "relevance": 1-5, "evidence_or_concepts": 1-5, "clarity": 1-5},
+   "comment": one or two sentences on this answer, "better": one sentence on how to make it stronger}] (one per question, in order)}`,
 };
 
 export const conceptNames = (c: Concepts) => c.topics.flatMap((t) => t.items.map((i) => i.name));

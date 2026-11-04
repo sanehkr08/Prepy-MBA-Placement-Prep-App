@@ -289,6 +289,12 @@ function PracticeInner() {
           <span className="text-[15px] font-normal text-muted">of {queue?.items.length ?? 0} items practised</span>
         </p>
       </PanelCard>
+      <Link
+        href={`/mock/${jdId}`}
+        className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-ink no-underline transition hover:bg-ground"
+      >
+        Start a mock interview
+      </Link>
       <Link href={`/kit/${jdId}`} className="inline-flex min-h-[44px] items-center self-center text-sm font-medium">
         Back to prep kit
       </Link>

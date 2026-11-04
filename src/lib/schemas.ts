@@ -206,6 +206,27 @@ export const ConceptQuestionsSchema = z.object({
 });
 export type ConceptQuestions = z.infer<typeof ConceptQuestionsSchema>;
 
+/* ---------- Mock interview (P15 follow-up, P16 scorecard) ---------- */
+
+export const FollowupSchema = z.object({ followup: z.string().default("") });
+
+export const MockScoreSchema = z.object({
+  overall_score: z.number().min(0).max(100),
+  verdict: z.string(),
+  summary: z.string(),
+  strengths: z.array(z.string()).default([]),
+  improvements: z.array(z.string()).default([]),
+  questions: z.array(
+    z.object({
+      index: z.coerce.number(),
+      scores: z.object({ structure: Score, relevance: Score, evidence_or_concepts: Score, clarity: Score }),
+      comment: z.string().default(""),
+      better: z.string().default(""),
+    }),
+  ),
+});
+export type MockScore = z.infer<typeof MockScoreSchema>;
+
 /* ---------- Kit section names ---------- */
 
 export const KIT_SECTIONS = ["concepts", "questions", "cases", "situational"] as const;

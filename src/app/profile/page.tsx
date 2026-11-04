@@ -187,7 +187,7 @@ export default function ProfilePage() {
   );
 
   return (
-    <AppShell active="profile" panel={panel}>
+    <AppShell active="profile" nav="home" panel={panel}>
       <PageTitle eyebrow="Your profile">{mode === "view" ? "What Prepy knows about you" : "Update your profile"}</PageTitle>
 
       {!loaded || !p ? (

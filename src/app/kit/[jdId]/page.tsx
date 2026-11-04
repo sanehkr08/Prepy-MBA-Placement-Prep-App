@@ -402,6 +402,12 @@ export default function KitPage() {
       <Link href={`/practice/${jdId}`} className={primaryLink}>
         Start practising →
       </Link>
+      <Link
+        href={`/mock/${jdId}`}
+        className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-full bg-white px-6 text-sm font-semibold text-ink no-underline transition hover:bg-ground"
+      >
+        Start a mock interview
+      </Link>
     </>
   );
 
