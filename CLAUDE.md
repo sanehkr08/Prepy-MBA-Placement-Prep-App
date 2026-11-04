@@ -62,7 +62,8 @@ prepy/
       kits/page.tsx                    My prep kits: every role and JD kit
       mocks/page.tsx                   Mock interviews across all kits
       guide/page.tsx                   How Prepy works
-      progress/ impromptu/ gd/ stories/ drill/   Planned features: placeholder pages (components/ComingSoon.tsx)
+      impromptu/                       Impromptu speaking: set-up → prep countdown → speak timer → feedback (SpeechFeedback.tsx); [id] = a past speech
+      progress/ gd/ stories/ drill/    Planned features: placeholder pages (components/ComingSoon.tsx)
       tutor/page.tsx                   Ask Prepy: v1 placeholder for the voice AI tutor (floating "Ask Prepy" button on every page)
       api/
         auth/[...nextauth]/route.ts    Auth.js endpoints
@@ -86,18 +87,22 @@ prepy/
         mock/[id]/route.ts             GET one mock (questions, answers, scorecard)
         mock/[id]/answer/route.ts      POST an answer; a main answer may return a follow-up (P15)
         mock/[id]/finish/route.ts      POST score the whole interview (P16)
+        impromptu/topic/route.ts       POST a fresh topic (P17) from the chosen categories, avoiding recent ones
+        impromptu/route.ts             GET past speeches, POST score + save a speech (P18)
+        impromptu/[id]/route.ts        GET one past speech
         data/route.ts                  DELETE all data
         health/llm/route.ts            GET quick API-key check
     components/   ui.tsx (shell, rail, Back/Next step bar, chips, cards, buttons), ProfileEditor.tsx, hooks.ts (useProfile, useDictation, useUndoableText)
     lib/
       llm.ts            callLLM (JSON + Zod + one retry + logging), errorResponse
-      prompts.ts        P1–P16 with versions + GROUNDING_RULE
+      prompts.ts        P1–P18 with versions + GROUNDING_RULE
       prep.ts           orchestration, caching, in-flight request sharing, kit prefetch, Generate More, grounding guards, practice queue, study plan
       profile-lines.ts  numbered profile lines (ED1, EX1.B2, AC1…) used for citations
       schemas.ts        Zod schemas
       db.ts             SQLite connection + schema
       store.ts          per-user data store (same API as the MVP's JSON store); mock interviews in the mocks table
       mock.ts           mock interviews: question mix per length, follow-ups, scorecard
+      impromptu.ts      impromptu speaking: topics, filler-word and pace stats (in code), feedback
       users.ts          accounts, password hashing, one-time import of data/prepy.json into the first account
       user-context.ts   runAsUser / currentUserId (AsyncLocalStorage)
       api-auth.ts       withUser(): signed-in check + user scope for API routes
@@ -165,7 +170,7 @@ Free-tier note: on Gemini's free tier, Google may use prompts and outputs to imp
 
 ## 9. Out of scope for the MVP
 
-Video answers, RAG over case books, deployment beyond an optional Vercel preview. (Version 1 plan, in order: accounts and onboarding (done), home page with greeting and two paths (done), Prepare for a role (done), mock interview (done), impromptu speaking, group discussion.)
+Video answers, RAG over case books, deployment beyond an optional Vercel preview. (Version 1 plan, in order: accounts and onboarding (done), home page with greeting and two paths (done), Prepare for a role (done), mock interview (done), impromptu speaking (done), group discussion.)
 
 ## 10. Build status
 

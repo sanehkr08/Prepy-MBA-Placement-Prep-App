@@ -57,6 +57,20 @@ export type MockData = {
 };
 export type MockRecord = { id: string; jd_id: string; data: MockData; created_at: string; finished_at: string | null };
 
+/** One impromptu speech: the topic, what was said, and its feedback. */
+export type SpeechData = {
+  topic: string;
+  category: string;
+  prep_seconds: number;
+  speak_seconds: number;
+  duration_seconds: number;
+  transcript: string;
+  input_mode: "typed" | "voice";
+  stats: { words: number; wpm: number; fillers: Record<string, number>; filler_total: number };
+  result: unknown;
+};
+export type SpeechRecord = { id: string; data: SpeechData; created_at: string };
+
 export type LLMCallRecord = {
   prompt_name: string;
   prompt_version: string;
@@ -289,6 +303,23 @@ export const store = {
       kit: { role: String(r.role), company: String(r.company), kind: (r.kind === "role" ? "role" : "jd") as JDKind },
     })),
 
+  /* impromptu speeches */
+  createSpeech: (data: SpeechData): SpeechRecord => {
+    const rec = { id: randomUUID().slice(0, 8), data, created_at: now() };
+    db().prepare("INSERT INTO speeches (id, user_id, data, created_at) VALUES (?, ?, ?, ?)").run(rec.id, uid(), JSON.stringify(data), rec.created_at);
+    return rec;
+  },
+  getSpeech: (id: string): SpeechRecord | null => {
+    const r = db().prepare("SELECT * FROM speeches WHERE id = ? AND user_id = ?").get(id, uid()) as Row | undefined;
+    return r ? { id: String(r.id), data: json<SpeechData>(r.data), created_at: String(r.created_at) } : null;
+  },
+  listSpeeches: (limit = 50): SpeechRecord[] =>
+    (db().prepare("SELECT * FROM speeches WHERE user_id = ? ORDER BY created_at DESC LIMIT ?").all(uid(), limit) as Row[]).map((r) => ({
+      id: String(r.id),
+      data: json<SpeechData>(r.data),
+      created_at: String(r.created_at),
+    })),
+
   /* llm call log (also written by health checks, so the user is optional) */
   logLLMCall: (c: Omit<LLMCallRecord, "created_at">) => {
     db()
@@ -303,7 +334,7 @@ export const store = {
   deleteAll: () => {
     const id = uid();
     transaction(() => {
-      for (const t of ["profiles", "jds", "fit_maps", "kits", "plans", "attempts", "mocks", "llm_calls"]) {
+      for (const t of ["profiles", "jds", "fit_maps", "kits", "plans", "attempts", "mocks", "speeches", "llm_calls"]) {
         db().prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(id);
       }
     });

@@ -227,6 +227,25 @@ export const MockScoreSchema = z.object({
 });
 export type MockScore = z.infer<typeof MockScoreSchema>;
 
+/* ---------- Impromptu speaking (P17 topic, P18 feedback) ---------- */
+
+export const ImpromptuTopicSchema = z.object({
+  topic: z.string(),
+  category: z.string().default(""),
+  angle: z.string().default(""),
+});
+export type ImpromptuTopic = z.infer<typeof ImpromptuTopicSchema>;
+
+export const ImpromptuScoreSchema = z.object({
+  overall_score: z.number().min(0).max(100),
+  headline: z.string(),
+  scores: z.object({ structure: Score, content: Score, clarity: Score, delivery: Score }),
+  strengths: z.array(z.string()).default([]),
+  improvements: z.array(z.string()).default([]),
+  outline: z.array(z.string()).default([]),
+});
+export type ImpromptuScore = z.infer<typeof ImpromptuScoreSchema>;
+
 /* ---------- Kit section names ---------- */
 
 export const KIT_SECTIONS = ["concepts", "questions", "cases", "situational"] as const;

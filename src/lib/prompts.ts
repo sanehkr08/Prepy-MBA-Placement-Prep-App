@@ -1,5 +1,5 @@
 /**
- * All prompts P1–P16. Bump a prompt's version when you change it, so evals can
+ * All prompts P1–P18. Bump a prompt's version when you change it, so evals can
  * compare versions (BUILD_PLAN Task 10).
  */
 import type { JDData, FitMap, Concepts, Questions, Cases, Situational } from "./schemas";
@@ -403,6 +403,62 @@ Return JSON:
  "improvements": [3 specific, actionable things to fix, most important first],
  "questions": [{"index": the question number, "scores": {"structure": 1-5, "relevance": 1-5, "evidence_or_concepts": 1-5, "clarity": 1-5},
    "comment": one or two sentences on this answer, "better": one sentence on how to make it stronger}] (one per question, in order)}`,
+};
+
+/* P17 — Impromptu topic: a fresh extempore topic from the chosen categories */
+export const IMPROMPTU_CATEGORIES = {
+  business: "Business and current affairs (economy, startups, technology, policy, markets, India and the world)",
+  personal: "Personal and opinion (choices, values, experiences, preferences; answerable by anyone)",
+  role: "Role-linked (a situation or debate from the day-to-day of the candidate's target roles)",
+} as const;
+export type ImpromptuCategory = keyof typeof IMPROMPTU_CATEGORIES;
+
+export const P17 = {
+  name: "P17_impromptu_topic",
+  version: "v1",
+  system: `You set extempore (impromptu speaking) topics for MBA placement and B-school practice. A good topic is specific, debatable or reflective, can be spoken about for one to three minutes without research, and fits an Indian B-school context. Vary the type: a debate ("Should…"), an opinion ("Is…"), a reflection ("A time…"), or a short scenario. Never repeat or closely reword a recent topic.`,
+  user: (args: { category: ImpromptuCategory; roles: string[]; recent: string[] }) => `CATEGORY: ${IMPROMPTU_CATEGORIES[args.category]}
+${args.category === "role" ? `Target roles: ${args.roles.length ? args.roles.join(", ") : "general management"}\n` : ""}Recent topics to avoid:
+${args.recent.length ? args.recent.map((t) => `- ${t}`).join("\n") : "(none)"}
+
+Return JSON: {"topic": the topic as the moderator would say it (one sentence), "category": a two- or three-word label, "angle": one short hint on a possible way in (not a full answer)}`,
+};
+
+/* P18 — Impromptu feedback: structure, content, clarity and delivery of one speech */
+export const P18 = {
+  name: "P18_impromptu_feedback",
+  version: "v1",
+  system: `You coach impromptu speaking (extempore) for MBA placements. Judge a short spoken answer on a random topic: structure (clear opening, two or three points, a conclusion), content (relevant, specific, original, examples), clarity (easy to follow, concise sentences), and delivery (pace, filler words, confidence; use the measured stats given). Score each 1 to 5 and give an overall score out of 100.
+Speak to the speaker directly as "you". Be specific and kind but honest.
+The transcript comes from speech recognition: ignore small transcription errors and missing punctuation.
+In the outline, never invent personal experiences for the speaker: use placeholders like [your example].`,
+  user: (args: {
+    topic: string;
+    transcript: string;
+    seconds: number;
+    target: number;
+    words: number;
+    wpm: number;
+    typed: boolean;
+    fillers: string;
+  }) => `TOPIC: ${args.topic}
+${
+  args.typed
+    ? `This answer was TYPED, not spoken (target speaking time ${args.target} seconds). ${args.words} words. Do not judge pace or time; judge delivery on wording, confidence and filler words only.`
+    : `Spoke for ${args.seconds} seconds (target ${args.target}). ${args.words} words, about ${args.wpm} words per minute.`
+} Filler words: ${args.fillers || "none"}.
+
+TRANSCRIPT:
+"""
+${args.transcript || "(nothing said)"}
+"""
+
+Return JSON:
+{"overall_score": 0-100, "headline": one sentence verdict,
+ "scores": {"structure": 1-5, "content": 1-5, "clarity": 1-5, "delivery": 1-5},
+ "strengths": [2 or 3 specific things that worked],
+ "improvements": [3 specific things to do differently next time, most important first],
+ "outline": [3 to 5 short lines: a strong way to structure an answer on this topic]}`,
 };
 
 export const conceptNames = (c: Concepts) => c.topics.flatMap((t) => t.items.map((i) => i.name));
