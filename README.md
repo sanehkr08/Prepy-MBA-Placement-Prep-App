@@ -14,7 +14,10 @@
   Next.js 16 · TypeScript · Tailwind CSS · SQLite (libSQL / Turso) · Auth.js · Gemini / Groq / Claude · Zod · Web Speech API
 </p>
 
-<!-- LIVE-DEMO-LINK: replaced with the Vercel address once deployed -->
+<p align="center">
+  <a href="https://prepy-lyart.vercel.app"><strong>Try the live demo →</strong></a><br />
+  <sub>On the sign-in page, click <strong>Open the demo</strong>: no sign-up needed. It opens a shared account with a fictional candidate's profile.</sub>
+</p>
 
 <p align="center">
   <img src="docs/screenshots/home.png" alt="Prepy home page: a time-of-day greeting, Prepare for a role, and Prepare for your JD" width="100%" />
