@@ -11,12 +11,12 @@ import { store } from "@/lib/store";
  */
 async function handlePOST(req: Request) {
   try {
-    if (!store.getProfile()) return Response.json({ error: "Save your profile first." }, { status: 400 });
+    if (!await store.getProfile()) return Response.json({ error: "Save your profile first." }, { status: 400 });
     const { name } = (await req.json().catch(() => ({}))) as { name?: string };
     const role = (name ?? "").replace(/\s+/g, " ").trim();
     if (role.length < 2 || role.length > 80) return Response.json({ error: "Enter a role name." }, { status: 400 });
 
-    const saved = store.findRoleJD(role);
+    const saved = await store.findRoleJD(role);
     if (saved) return Response.json({ id: saved.id, created: false });
 
     const data = await callLLM({
@@ -26,7 +26,7 @@ async function handlePOST(req: Request) {
       user: P14.user(role),
       schema: JDSchema,
     });
-    const rec = store.createJD({ kind: "role", company: "", role, raw_text: "", data });
+    const rec = await store.createJD({ kind: "role", company: "", role, raw_text: "", data });
     return Response.json({ id: rec.id, created: true });
   } catch (err) {
     return errorResponse(err);

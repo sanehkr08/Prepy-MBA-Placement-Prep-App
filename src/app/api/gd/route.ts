@@ -6,7 +6,7 @@ import type { GDScore } from "@/lib/schemas";
 
 /** Past (finished) group discussions, newest first. */
 async function handleGET() {
-  const gds = store.listGDs().map((g) => ({
+  const gds = (await store.listGDs()).map((g) => ({
     id: g.id,
     created_at: g.created_at,
     mode: g.data.mode,
@@ -20,7 +20,7 @@ async function handleGET() {
 async function handlePOST(req: Request) {
   try {
     const b = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-    const g = startGD({
+    const g = await startGD({
       participants: Number(b.participants ?? 3),
       topic: String(b.topic ?? ""),
       context: String(b.context ?? ""),

@@ -24,10 +24,12 @@ export function SignInForm({
   googleEnabled,
   next,
   authError,
+  demo,
 }: {
   googleEnabled: boolean;
   next: string;
   authError: string | null;
+  demo: { email: string; password: string } | null;
 }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("signin");
@@ -38,6 +40,20 @@ export function SignInForm({
   const [error, setError] = useState<string | null>(
     authError ? "Sign-in did not complete. Please try again." : null,
   );
+
+  async function openDemo() {
+    if (!demo) return;
+    setError(null);
+    setBusy(true);
+    const res = await signIn("credentials", { email: demo.email, password: demo.password, redirect: false });
+    if (!res || res.error) {
+      setError("The demo account isn't available right now. Please try again.");
+      setBusy(false);
+      return;
+    }
+    router.replace(next);
+    router.refresh();
+  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -92,6 +108,24 @@ export function SignInForm({
           </h1>
           <p className="mt-3 text-[16px] text-muted">Interview prep built from your own story.</p>
         </header>
+
+        {demo ? (
+          <section aria-labelledby="demo-h" className="flex flex-col gap-3 rounded-[32px] bg-lavender p-6">
+            <h2 id="demo-h" className="text-[22px] font-medium leading-tight">
+              Recruiter? Try Prepy instantly
+            </h2>
+            <p className="text-[15px]">
+              Sign in to a shared demo account with a fictional MBA candidate&apos;s profile, and explore every feature.
+            </p>
+            <PrimaryButton type="button" onClick={openDemo} disabled={busy} className="min-h-[52px]">
+              {busy ? "Opening the demo…" : "Open the demo →"}
+            </PrimaryButton>
+            <p className="text-[13px] text-muted">
+              Or sign in below with <strong className="font-semibold text-ink">{demo.email}</strong> and password{" "}
+              <strong className="font-semibold text-ink">{demo.password}</strong>.
+            </p>
+          </section>
+        ) : null}
 
         <section className="flex flex-col gap-5 rounded-[32px] bg-panel p-6">
           {googleEnabled ? (

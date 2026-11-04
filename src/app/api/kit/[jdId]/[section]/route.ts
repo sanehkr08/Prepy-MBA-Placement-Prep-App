@@ -13,7 +13,7 @@ async function handleGET(
     if (!KIT_SECTIONS.includes(section as KitSection)) {
       return Response.json({ error: "Unknown section." }, { status: 404 });
     }
-    const jd = requireJD(jdId);
+    const jd = await requireJD(jdId);
     const refresh = new URL(req.url).searchParams.get("refresh") === "1";
     const data = await ensureSection(jdId, section as KitSection, refresh);
     return Response.json({

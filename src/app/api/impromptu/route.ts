@@ -6,7 +6,7 @@ import type { ImpromptuScore } from "@/lib/schemas";
 
 /** Past impromptu speeches, newest first. */
 async function handleGET() {
-  const speeches = store.listSpeeches().map((s) => ({
+  const speeches = (await store.listSpeeches()).map((s) => ({
     id: s.id,
     created_at: s.created_at,
     topic: s.data.topic,

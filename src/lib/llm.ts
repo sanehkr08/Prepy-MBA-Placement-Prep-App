@@ -17,6 +17,8 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { z } from "zod";
 import { store } from "./store";
+import { maybeUserId } from "./user-context";
+import { dailyLimitMessage } from "./demo";
 
 export class LLMError extends Error {
   constructor(
@@ -322,6 +324,9 @@ export async function callLLM<S extends z.ZodTypeAny>(opts: {
   /** 0.4 by default; raise it (up to about 1) when variety matters more than consistency. */
   temperature?: number;
 }): Promise<z.infer<S>> {
+  // On the hosted demo, stop before spending the free quota past today's caps.
+  const limited = await dailyLimitMessage(maybeUserId());
+  if (limited) throw new LLMError("daily limit", limited, 429);
   const system =
     opts.system + "\n\nRespond with ONE valid JSON object only. No prose, no markdown fences.";
   let userContent = opts.user;
@@ -337,7 +342,7 @@ export async function callLLM<S extends z.ZodTypeAny>(opts: {
       outputTokens = raw.outputTokens;
       const parsed = opts.schema.safeParse(extractJSON(raw.text));
       if (!parsed.success) throw new Error(parsed.error.message);
-      store.logLLMCall({
+      await store.logLLMCall({
         prompt_name: opts.name,
         prompt_version: opts.version,
         input_tokens: inputTokens,
@@ -347,7 +352,7 @@ export async function callLLM<S extends z.ZodTypeAny>(opts: {
       });
       return parsed.data;
     } catch (err) {
-      store.logLLMCall({
+      await store.logLLMCall({
         prompt_name: opts.name,
         prompt_version: opts.version,
         input_tokens: inputTokens,

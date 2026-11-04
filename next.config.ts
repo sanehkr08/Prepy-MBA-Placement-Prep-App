@@ -9,8 +9,8 @@ const nextConfig: NextConfig = {
       },
     },
   },
-  // unpdf and mammoth run only on the server (API routes).
-  serverExternalPackages: ["unpdf", "mammoth"],
+  // Server-only packages, loaded at run time rather than bundled (the libSQL client has a native part).
+  serverExternalPackages: ["unpdf", "mammoth", "@libsql/client", "libsql"],
 };
 
 export default nextConfig;

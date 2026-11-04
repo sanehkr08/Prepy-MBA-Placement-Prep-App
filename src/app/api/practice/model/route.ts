@@ -9,7 +9,7 @@ async function handlePOST(req: Request) {
     const { jdId, itemId } = (await req.json()) as { jdId?: string; itemId?: string };
     if (!jdId || !itemId) return Response.json({ error: "Missing question." }, { status: 400 });
     const model = await ensureModelAnswer(jdId, itemId);
-    const lines = profileLines(requireProfile().data);
+    const lines = profileLines((await requireProfile()).data);
     return Response.json({
       model: { ...model, sources: model.source_refs.map((r) => refLabel(lines, r) ?? r) },
     });

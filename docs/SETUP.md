@@ -4,7 +4,7 @@ Windows and PowerShell are shown; macOS and Linux work the same way with the equ
 
 ## 1. Requirements
 
-- **Node.js 22.13 or newer** (`node -v` to check). Prepy uses Node's built-in SQLite, so there are no native build tools to install. Get the LTS from https://nodejs.org.
+- **Node.js 22.13 or newer** (`node -v` to check). Get the LTS from https://nodejs.org. The database is a local SQLite file (`data/prepy.db`); there are no build tools to install.
 - **One AI key.** Two providers have free tiers:
   - **Gemini:** create a key at https://aistudio.google.com/apikey (sign in with Google, click *Create API key*).
   - **Groq** (not Grok): create a key at https://console.groq.com/keys.
@@ -77,4 +77,4 @@ Results are written to `evals/results/<date>.md`.
 
 ## Where your data lives
 
-Accounts, resumes, JDs and practice answers are stored in `data/prepy.db` (SQLite), and your keys in `.env.local`. Both are git-ignored and never leave your computer, except for the text sent to the AI provider to generate each answer.
+Accounts, resumes, JDs and practice answers are stored in `data/prepy.db` (SQLite), and your keys in `.env.local`. (The hosted demo uses a Turso database instead: see `docs/DEPLOY.md`.) Both are git-ignored and never leave your computer, except for the text sent to the AI provider to generate each answer.

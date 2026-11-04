@@ -21,7 +21,7 @@ const MEMBERS = [
 
 /** A fresh topic: a random theme and style each time, never one already seen (`exclude`: shown this session). */
 export async function gdTopic(exclude: string[] = []) {
-  const seen = [...store.recentGDTopics(25), ...exclude];
+  const seen = [...(await store.recentGDTopics(25)), ...exclude];
   let out = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     out = await callLLM({
@@ -39,7 +39,7 @@ export async function gdTopic(exclude: string[] = []) {
 }
 
 /** `participants`: other members besides the user. 0 = just the user (quick mode), or 2 or 3. */
-export function startGD(input: { participants: number; topic: string; context: string; input_mode: string }): GDRecord {
+export async function startGD(input: { participants: number; topic: string; context: string; input_mode: string }): Promise<GDRecord> {
   const topic = input.topic.trim().slice(0, 300);
   if (!topic) throw new LLMError("no topic", "The topic is missing.", 400);
   if (![0, 2, 3].includes(input.participants)) throw new LLMError("bad count", "Choose 0, 2 or 3 other participants.", 400);
@@ -54,11 +54,11 @@ export function startGD(input: { participants: number; topic: string; context: s
     input_mode: input.input_mode === "typed" ? "typed" : "voice",
     result: null,
   };
-  return store.createGD(data);
+  return await store.createGD(data);
 }
 
-export function requireGD(id: string): GDRecord {
-  const g = store.getGD(id);
+export async function requireGD(id: string): Promise<GDRecord> {
+  const g = await store.getGD(id);
   if (!g) throw new LLMError("no gd", "This group discussion was not found.", 404);
   return g;
 }
@@ -103,14 +103,14 @@ async function aiRound(data: GDData) {
  * Returns what the user does next: "turn", "summary" or "finish".
  */
 export async function takeTurn(id: string, action: string, text: string): Promise<{ gd: GDRecord; next: "turn" | "summary" | "finish" }> {
-  const g = requireGD(id);
+  const g = await requireGD(id);
   const data = g.data;
   if (data.result) throw new LLMError("finished", "This discussion is already finished.", 400);
   const said = text.trim().slice(0, 6000);
 
   if (data.mode === "quick" || action === "summary") {
     data.turns.push({ speaker: YOU, text: said, round: data.rounds_done, kind: data.mode === "quick" ? "point" : "summary" });
-    store.saveGD(id, data);
+    await store.saveGD(id, data);
     return { gd: { ...g, data }, next: "finish" };
   }
 
@@ -124,13 +124,13 @@ export async function takeTurn(id: string, action: string, text: string): Promis
   }
 
   if (data.rounds_done < GD_ROUNDS) await aiRound(data);
-  store.saveGD(id, data);
+  await store.saveGD(id, data);
   return { gd: { ...g, data }, next: data.rounds_done >= GD_ROUNDS ? "summary" : "turn" };
 }
 
 /** Score the user's part in the discussion and save the feedback. */
 export async function finishGD(id: string): Promise<GDScore> {
-  const g = requireGD(id);
+  const g = await requireGD(id);
   if (g.data.result) return g.data.result as GDScore;
   const yours = g.data.turns.filter((t) => t.speaker === YOU);
   const result = await callLLM({
@@ -148,6 +148,6 @@ export async function finishGD(id: string): Promise<GDScore> {
   });
   result.overall_score = Math.round(result.overall_score);
   g.data.result = result;
-  store.saveGD(id, g.data, true);
+  await store.saveGD(id, g.data, true);
   return result;
 }

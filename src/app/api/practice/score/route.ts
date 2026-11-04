@@ -18,8 +18,8 @@ async function handlePOST(req: Request) {
     if (answer.length < 20) {
       return Response.json({ error: "Write or speak a little more before scoring." }, { status: 400 });
     }
-    const jd = requireJD(body.jdId);
-    const item = practiceItems(body.jdId).find((i) => i.id === body.itemId);
+    const jd = await requireJD(body.jdId);
+    const item = (await practiceItems(body.jdId)).find((i) => i.id === body.itemId);
     if (!item) return Response.json({ error: "Practice item not found." }, { status: 404 });
     const result = await callLLM({
       name: P9.name,
@@ -36,7 +36,7 @@ async function handlePOST(req: Request) {
       schema: PracticeScoreSchema,
       maxTokens: 2500,
     });
-    store.addAttempt({
+    await store.addAttempt({
       jd_id: jd.id,
       item_id: item.id,
       item_type: item.type,

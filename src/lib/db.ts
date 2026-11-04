@@ -1,10 +1,13 @@
 /**
- * SQLite database (data/prepy.db) using Node's built-in `node:sqlite`:
- * no native build tools to install on Windows. Every user-owned row carries a user_id.
+ * SQLite database through the libSQL client (`@libsql/client`):
+ * - locally, the file data/prepy.db (no native build tools needed on Windows);
+ * - when TURSO_DATABASE_URL is set (the hosted demo), a Turso database.
+ * Every user-owned row carries a user_id. All access is async.
  */
 import fs from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import { pathToFileURL } from "node:url";
+import { createClient, type Client, type InValue } from "@libsql/client";
 
 export const DATA_DIR = process.env.PREPY_DATA_DIR || path.join(process.cwd(), "data");
 
@@ -110,44 +113,71 @@ CREATE TABLE IF NOT EXISTS meta (
 `;
 
 /** Add columns that newer versions need to databases created by older ones. */
-function migrate(conn: DatabaseSync) {
-  const jdCols = (conn.prepare("PRAGMA table_info(jds)").all() as { name: string }[]).map((c) => c.name);
+async function migrate(conn: Client) {
+  const cols = (await conn.execute("PRAGMA table_info(jds)")).rows.map((c) => String(c.name));
   // 'jd' = a job description the user added; 'role' = "Prepare for a role" (a standard role profile).
-  if (!jdCols.includes("kind")) conn.exec("ALTER TABLE jds ADD COLUMN kind TEXT NOT NULL DEFAULT 'jd'");
+  if (!cols.includes("kind")) await conn.execute("ALTER TABLE jds ADD COLUMN kind TEXT NOT NULL DEFAULT 'jd'");
 }
 
 // Bump when SCHEMA or migrate() changes, so a running server applies it without a restart.
-const SCHEMA_VERSION = 5;
+const SCHEMA_VERSION = 6;
 
-// One connection per server process (kept on globalThis so dev hot reloads reuse it).
-const g = globalThis as unknown as { prepyDb?: DatabaseSync; prepySchemaVersion?: number };
+// One client per server process (kept on globalThis so dev hot reloads reuse it).
+const g = globalThis as unknown as { prepyDb?: Client; prepySchema?: { version: number; ready: Promise<void> } };
 
-export function db(): DatabaseSync {
-  if (!g.prepyDb) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
-    const conn = new DatabaseSync(path.join(DATA_DIR, "prepy.db"));
-    conn.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
-    g.prepyDb = conn;
+export const usingTurso = () => !!process.env.TURSO_DATABASE_URL;
+
+function connect(): Client {
+  if (usingTurso()) {
+    return createClient({ url: process.env.TURSO_DATABASE_URL!, authToken: process.env.TURSO_AUTH_TOKEN });
   }
-  // A hot reload keeps the old connection, so schema changes are applied here, not only on open.
-  if (g.prepySchemaVersion !== SCHEMA_VERSION) {
-    g.prepyDb.exec(SCHEMA);
-    migrate(g.prepyDb);
-    g.prepySchemaVersion = SCHEMA_VERSION;
-  }
-  return g.prepyDb;
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  return createClient({ url: pathToFileURL(path.join(DATA_DIR, "prepy.db")).href });
 }
 
-/** Run several writes as one transaction. */
-export function transaction<T>(fn: () => T): T {
-  const conn = db();
-  conn.exec("BEGIN");
-  try {
-    const out = fn();
-    conn.exec("COMMIT");
-    return out;
-  } catch (err) {
-    conn.exec("ROLLBACK");
-    throw err;
+async function client(): Promise<Client> {
+  g.prepyDb ??= connect();
+  const conn = g.prepyDb;
+  // A hot reload keeps the old client, so schema changes are applied here, not only on connect.
+  if (g.prepySchema?.version !== SCHEMA_VERSION) {
+    const ready = (async () => {
+      await conn.executeMultiple(SCHEMA);
+      await migrate(conn);
+    })();
+    g.prepySchema = { version: SCHEMA_VERSION, ready };
+    // Retry on the next call if setting up failed (e.g. the network blipped).
+    ready.catch(() => {
+      if (g.prepySchema?.ready === ready) g.prepySchema = undefined;
+    });
   }
+  await g.prepySchema!.ready;
+  return conn;
+}
+
+export type Row = Record<string, unknown>;
+export type Stmt = { sql: string; args?: InValue[] };
+
+/** All rows of a query. */
+export async function all(sql: string, args: InValue[] = []): Promise<Row[]> {
+  return (await (await client()).execute({ sql, args })).rows as unknown as Row[];
+}
+
+/** The first row of a query, or undefined. */
+export async function get(sql: string, args: InValue[] = []): Promise<Row | undefined> {
+  return (await all(sql, args))[0];
+}
+
+/** Run a write; returns the number of rows changed. */
+export async function run(sql: string, args: InValue[] = []): Promise<number> {
+  return (await (await client()).execute({ sql, args })).rowsAffected;
+}
+
+/** Run several writes as one transaction; returns rows changed per statement. */
+export async function batch(stmts: Stmt[]): Promise<number[]> {
+  if (!stmts.length) return [];
+  const out = await (await client()).batch(
+    stmts.map((s) => ({ sql: s.sql, args: s.args ?? [] })),
+    "write",
+  );
+  return out.map((r) => r.rowsAffected);
 }

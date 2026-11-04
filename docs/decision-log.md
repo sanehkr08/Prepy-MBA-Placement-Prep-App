@@ -4,6 +4,8 @@ Newest first. The full PRD (with the same log) lives in the Prepy PRD doc in the
 
 | Date | Decision | Reason |
 | --- | --- | --- |
+| 2026-11-04 | Live demo on Vercel + Turso (free), with a shared demo account, an owner-only sign-up allowlist and daily AI caps | Recruiters can try it in one click without uploading a resume; strangers can't drain the free AI quotas or store personal data |
+| 2026-11-04 | Database access moved to the libSQL client (async), replacing `node:sqlite` | The same SQLite code runs on a local file and on Turso; serverless hosts have no persistent disk |
 | 2026-11-04 | Topic generators get a random theme and style per request, exclude topics already shown, and run at a higher temperature | "Different topic" kept circling between two ideas when only started topics were remembered |
 | 2026-11-04 | Group discussion with 0, 2 or 3 AI members in rounds, then the user's summary | Rounds keep a simulated GD easy to follow; solo mode covers practice without a group |
 | 2026-11-04 | AI GD members never quote numbers or sources | Made-up statistics would teach bad habits and can't be checked |

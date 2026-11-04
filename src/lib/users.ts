@@ -6,19 +6,31 @@
 import fs from "node:fs";
 import path from "node:path";
 import { randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
-import { db, transaction, DATA_DIR } from "./db";
+import { batch, get, run, DATA_DIR, type Row, type Stmt } from "./db";
+import { signupAllowed } from "./demo";
 
 export type UserRow = { id: string; email: string; name: string; image: string | null; password_hash: string | null };
 
 const now = () => new Date().toISOString();
 const normEmail = (e: string) => e.trim().toLowerCase();
 
-export function findUserByEmail(email: string): UserRow | null {
-  return (db().prepare("SELECT * FROM users WHERE email = ?").get(normEmail(email)) as UserRow | undefined) ?? null;
+const userFromRow = (r: Row | undefined): UserRow | null =>
+  r
+    ? {
+        id: String(r.id),
+        email: String(r.email),
+        name: String(r.name ?? ""),
+        image: r.image ? String(r.image) : null,
+        password_hash: r.password_hash ? String(r.password_hash) : null,
+      }
+    : null;
+
+export async function findUserByEmail(email: string): Promise<UserRow | null> {
+  return userFromRow(await get("SELECT * FROM users WHERE email = ?", [normEmail(email)]));
 }
 
-export function findUserById(id: string): UserRow | null {
-  return (db().prepare("SELECT * FROM users WHERE id = ?").get(id) as UserRow | undefined) ?? null;
+export async function findUserById(id: string): Promise<UserRow | null> {
+  return userFromRow(await get("SELECT * FROM users WHERE id = ?", [id]));
 }
 
 function hashPassword(password: string): string {
@@ -37,7 +49,7 @@ export function verifyPassword(password: string, stored: string | null): boolean
 
 export class SignUpError extends Error {}
 
-function insertUser(u: { email: string; name: string; image?: string | null; password_hash?: string | null }): UserRow {
+async function insertUser(u: { email: string; name: string; image?: string | null; password_hash?: string | null }): Promise<UserRow> {
   const row: UserRow = {
     id: randomUUID(),
     email: normEmail(u.email),
@@ -45,19 +57,25 @@ function insertUser(u: { email: string; name: string; image?: string | null; pas
     image: u.image ?? null,
     password_hash: u.password_hash ?? null,
   };
-  db()
-    .prepare("INSERT INTO users (id, email, name, image, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)")
-    .run(row.id, row.email, row.name, row.image, row.password_hash, now());
-  claimLegacyData(row.id);
+  await run("INSERT INTO users (id, email, name, image, password_hash, created_at) VALUES (?, ?, ?, ?, ?, ?)", [
+    row.id,
+    row.email,
+    row.name,
+    row.image,
+    row.password_hash,
+    now(),
+  ]);
+  await claimLegacyData(row.id);
   return row;
 }
 
 /** Email/password sign-up. */
-export function createPasswordUser(input: { email: string; password: string; name: string }): UserRow {
+export async function createPasswordUser(input: { email: string; password: string; name: string }): Promise<UserRow> {
   const email = normEmail(input.email);
+  if (!signupAllowed(email)) throw new SignUpError("Sign-ups are closed on this demo. Use the demo account instead.");
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new SignUpError("Enter a valid email address.");
   if (input.password.length < 8) throw new SignUpError("Use a password of at least 8 characters.");
-  const existing = findUserByEmail(email);
+  const existing = await findUserByEmail(email);
   if (existing) {
     throw new SignUpError(
       existing.password_hash
@@ -65,18 +83,27 @@ export function createPasswordUser(input: { email: string; password: string; nam
         : "This email signs in with Google. Use “Continue with Google”.",
     );
   }
+  return createUserUnchecked({ email, password: input.password, name: input.name });
+}
+
+/** Create an email/password account without the sign-up checks (used for the demo account). */
+export async function createUserUnchecked(input: { email: string; password: string; name: string }): Promise<UserRow> {
+  const email = normEmail(input.email);
   return insertUser({ email, name: input.name || email.split("@")[0], password_hash: hashPassword(input.password) });
 }
 
 /** Google sign-in: find the account by email, or create it. */
-export function upsertGoogleUser(input: { email: string; name?: string | null; image?: string | null }): UserRow {
-  const existing = findUserByEmail(input.email);
+export async function upsertGoogleUser(input: { email: string; name?: string | null; image?: string | null }): Promise<UserRow> {
+  const existing = await findUserByEmail(input.email);
   if (existing) {
-    db()
-      .prepare("UPDATE users SET name = CASE WHEN name = '' THEN ? ELSE name END, image = COALESCE(?, image) WHERE id = ?")
-      .run(input.name ?? "", input.image ?? null, existing.id);
-    return findUserById(existing.id)!;
+    await run("UPDATE users SET name = CASE WHEN name = '' THEN ? ELSE name END, image = COALESCE(?, image) WHERE id = ?", [
+      input.name ?? "",
+      input.image ?? null,
+      existing.id,
+    ]);
+    return (await findUserById(existing.id))!;
   }
+  if (!signupAllowed(input.email)) throw new SignUpError("Sign-ups are closed on this demo.");
   return insertUser({ email: input.email, name: input.name ?? "", image: input.image });
 }
 
@@ -100,10 +127,10 @@ type LegacyDB = {
   }[];
 };
 
-function claimLegacyData(userId: string) {
+async function claimLegacyData(userId: string) {
   const file = path.join(DATA_DIR, "prepy.json");
-  const claimed = db().prepare("SELECT value FROM meta WHERE key = 'legacy_claimed'").get();
-  if (claimed || !fs.existsSync(file)) return;
+  if (!fs.existsSync(file)) return;
+  if (await get("SELECT value FROM meta WHERE key = 'legacy_claimed'")) return;
   let legacy: LegacyDB;
   try {
     legacy = JSON.parse(fs.readFileSync(file, "utf8")) as LegacyDB;
@@ -112,54 +139,46 @@ function claimLegacyData(userId: string) {
     return;
   }
   const s = (v: unknown) => JSON.stringify(v);
-  transaction(() => {
-    const d = db();
-    if (legacy.profile) {
-      d.prepare("INSERT INTO profiles (user_id, raw_text, data, updated_at) VALUES (?, ?, ?, ?)").run(
-        userId,
-        legacy.profile.raw_text ?? "",
-        s(legacy.profile.data),
-        legacy.profile.updated_at ?? now(),
-      );
+  const stmts: Stmt[] = [];
+  if (legacy.profile) {
+    stmts.push({
+      sql: "INSERT INTO profiles (user_id, raw_text, data, updated_at) VALUES (?, ?, ?, ?)",
+      args: [userId, legacy.profile.raw_text ?? "", s(legacy.profile.data), legacy.profile.updated_at ?? now()],
+    });
+  }
+  for (const j of Object.values(legacy.jds ?? {})) {
+    stmts.push({
+      sql: "INSERT INTO jds (id, user_id, company, role, raw_text, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+      args: [j.id, userId, j.company ?? "", j.role ?? "", j.raw_text ?? "", s(j.data), j.created_at ?? now()],
+    });
+  }
+  for (const [jdId, f] of Object.entries(legacy.fitMaps ?? {})) {
+    const { created_at, ...fit } = f;
+    stmts.push({
+      sql: "INSERT INTO fit_maps (user_id, jd_id, data, created_at) VALUES (?, ?, ?, ?)",
+      args: [userId, jdId, s(fit), created_at ?? now()],
+    });
+  }
+  for (const [jdId, keys] of Object.entries(legacy.kits ?? {})) {
+    for (const [key, k] of Object.entries(keys)) {
+      stmts.push({
+        sql: "INSERT INTO kits (user_id, jd_id, key, data, prompt_version, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+        args: [userId, jdId, key, s(k.data), k.prompt_version ?? "v1", k.created_at ?? now()],
+      });
     }
-    for (const j of Object.values(legacy.jds ?? {})) {
-      d.prepare("INSERT INTO jds (id, user_id, company, role, raw_text, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)").run(
-        j.id,
-        userId,
-        j.company ?? "",
-        j.role ?? "",
-        j.raw_text ?? "",
-        s(j.data),
-        j.created_at ?? now(),
-      );
-    }
-    for (const [jdId, f] of Object.entries(legacy.fitMaps ?? {})) {
-      const { created_at, ...fit } = f;
-      d.prepare("INSERT INTO fit_maps (user_id, jd_id, data, created_at) VALUES (?, ?, ?, ?)").run(userId, jdId, s(fit), created_at ?? now());
-    }
-    for (const [jdId, keys] of Object.entries(legacy.kits ?? {})) {
-      for (const [key, k] of Object.entries(keys)) {
-        d.prepare("INSERT INTO kits (user_id, jd_id, key, data, prompt_version, created_at) VALUES (?, ?, ?, ?, ?, ?)").run(
-          userId,
-          jdId,
-          key,
-          s(k.data),
-          k.prompt_version ?? "v1",
-          k.created_at ?? now(),
-        );
-      }
-    }
-    for (const [jdId, done] of Object.entries(legacy.plans ?? {})) {
-      d.prepare("INSERT INTO plans (user_id, jd_id, done) VALUES (?, ?, ?)").run(userId, jdId, s(done));
-    }
-    for (const a of legacy.attempts ?? []) {
-      d.prepare(
-        `INSERT INTO attempts (id, user_id, jd_id, item_id, item_type, input_mode, answer_text, result, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      ).run(a.id, userId, a.jd_id, a.item_id, a.item_type, a.input_mode, a.answer_text, s(a.result), a.created_at);
-    }
-    d.prepare("INSERT INTO meta (key, value) VALUES ('legacy_claimed', ?)").run(userId);
-  });
+  }
+  for (const [jdId, done] of Object.entries(legacy.plans ?? {})) {
+    stmts.push({ sql: "INSERT INTO plans (user_id, jd_id, done) VALUES (?, ?, ?)", args: [userId, jdId, s(done)] });
+  }
+  for (const at of legacy.attempts ?? []) {
+    stmts.push({
+      sql: `INSERT INTO attempts (id, user_id, jd_id, item_id, item_type, input_mode, answer_text, result, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [at.id, userId, at.jd_id, at.item_id, at.item_type, at.input_mode, at.answer_text, s(at.result), at.created_at],
+    });
+  }
+  stmts.push({ sql: "INSERT INTO meta (key, value) VALUES ('legacy_claimed', ?)", args: [userId] });
+  await batch(stmts);
   // Keep the old file as a backup, renamed so it is not imported again.
   fs.renameSync(file, file + ".migrated");
   console.info(`[users] moved data/prepy.json into the first account (${userId}).`);

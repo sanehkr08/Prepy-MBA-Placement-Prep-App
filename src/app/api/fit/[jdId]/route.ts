@@ -10,8 +10,8 @@ async function handleGET(req: Request, { params }: { params: Promise<{ jdId: str
   try {
     const { jdId } = await params;
     const refresh = new URL(req.url).searchParams.get("refresh") === "1";
-    const jd = requireJD(jdId);
-    const profile = requireProfile();
+    const jd = await requireJD(jdId);
+    const profile = await requireProfile();
     const fit = await ensureFit(jdId, refresh);
     const lines = profileLines(profile.data);
     // Start building the prep kit while the user reads the fit map.

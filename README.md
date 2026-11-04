@@ -11,8 +11,10 @@
 </p>
 
 <p align="center">
-  Next.js 16 · TypeScript · Tailwind CSS · SQLite · Auth.js · Gemini / Groq / Claude · Zod · Web Speech API
+  Next.js 16 · TypeScript · Tailwind CSS · SQLite (libSQL / Turso) · Auth.js · Gemini / Groq / Claude · Zod · Web Speech API
 </p>
+
+<!-- LIVE-DEMO-LINK: replaced with the Vercel address once deployed -->
 
 <p align="center">
   <img src="docs/screenshots/home.png" alt="Prepy home page: a time-of-day greeting, Prepare for a role, and Prepare for your JD" width="100%" />
@@ -99,7 +101,8 @@ API routes ── withUser(): signed-in check + per-user data scope (Auth.js JWT
    ├── prompts.ts                     21 versioned prompts (P1–P21)
    ├── llm.ts                         one callLLM(): JSON + Zod + retry + logging,
    │                                  Gemini → Groq → xAI → Anthropic fallback
-   └── store.ts → SQLite (node:sqlite) every row carries a user_id
+   └── store.ts → SQLite via libSQL     every row carries a user_id
+                 (local file, or Turso when hosted)
 ```
 
 | Path | What |
@@ -126,7 +129,7 @@ cp .env.example .env.local   # add GEMINI_API_KEY (or GROQ_API_KEY) and AUTH_SEC
 npm run dev
 ```
 
-Then open http://localhost:3000 in Chrome or Edge. Full instructions, including Google sign-in and the evals, are in [`docs/SETUP.md`](docs/SETUP.md).
+Then open http://localhost:3000 in Chrome or Edge. Full instructions, including Google sign-in and the evals, are in [`docs/SETUP.md`](docs/SETUP.md). To host your own live demo (Vercel + Turso, free), see [`docs/DEPLOY.md`](docs/DEPLOY.md).
 
 ## Roadmap
 
@@ -134,7 +137,6 @@ Then open http://localhost:3000 in Chrome or Edge. Full instructions, including 
 - **Story bank:** reusable STAR stories drafted from the resume.
 - **Daily drill:** one question a day to keep the habit.
 - **Ask Prepy:** a real-time voice tutor.
-- **Hosted demo** so it can be tried without installing.
 
 ## About
 

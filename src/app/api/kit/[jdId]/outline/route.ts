@@ -10,7 +10,7 @@ async function handlePOST(req: Request, { params }: { params: Promise<{ jdId: st
     const { question } = (await req.json()) as { question?: string };
     if (!question) return Response.json({ error: "Missing question." }, { status: 400 });
     const outline = await ensureOutline(jdId, question);
-    const lines = profileLines(requireProfile().data);
+    const lines = profileLines((await requireProfile()).data);
     return Response.json({
       outline: {
         ...outline,

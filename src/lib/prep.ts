@@ -28,14 +28,14 @@ import {
 import { P3, P4, P5, P6, P7, P8, P10, P11, P12, P13, conceptNames } from "./prompts";
 import { profileLines, linesAsPrompt } from "./profile-lines";
 
-export function requireProfile() {
-  const p = store.getProfile();
+export async function requireProfile() {
+  const p = await store.getProfile();
   if (!p) throw new LLMError("no profile", "Upload and save your resume first.", 400);
   return p;
 }
 
-export function requireJD(jdId: string) {
-  const jd = store.getJD(jdId);
+export async function requireJD(jdId: string) {
+  const jd = await store.getJD(jdId);
   if (!jd) throw new LLMError("no jd", "This job description was not found.", 404);
   return jd;
 }
@@ -53,14 +53,14 @@ function once<T>(name: string, run: () => Promise<T>): Promise<T> {
 }
 
 export async function ensureFit(jdId: string, force = false): Promise<FitMap> {
-  const cached = store.getFitMap(jdId);
+  const cached = await store.getFitMap(jdId);
   if (cached && !force) return cached;
   return once(`fit:${jdId}`, () => generateFit(jdId));
 }
 
 async function generateFit(jdId: string): Promise<FitMap> {
-  const jd = requireJD(jdId);
-  const profile = requireProfile();
+  const jd = await requireJD(jdId);
+  const profile = await requireProfile();
   const lines = profileLines(profile.data);
   const raw = await callLLM({
     name: P3.name,
@@ -83,12 +83,12 @@ async function generateFit(jdId: string): Promise<FitMap> {
   };
   const ratio = items.length ? (counts.Strong + counts.Partial * 0.5) / items.length : 0;
   const overall_label = ratio >= 0.7 ? "Strong" : ratio >= 0.4 ? "Moderate" : "Low";
-  return store.saveFitMap(jdId, { items, counts, overall_label });
+  return await store.saveFitMap(jdId, { items, counts, overall_label });
 }
 
 async function generate(jdId: string, section: KitSection): Promise<unknown> {
-  const jd = requireJD(jdId);
-  const profile = requireProfile();
+  const jd = await requireJD(jdId);
+  const profile = await requireProfile();
   const lines = linesAsPrompt(profileLines(profile.data));
   switch (section) {
     case "concepts": {
@@ -101,7 +101,7 @@ async function generate(jdId: string, section: KitSection): Promise<unknown> {
         user: P4.user(jd.data, jd.company, gaps),
         schema: ConceptsSchema,
       });
-      store.saveKit(jdId, section, data, P4.version);
+      await store.saveKit(jdId, section, data, P4.version);
       return data;
     }
     case "questions": {
@@ -115,7 +115,7 @@ async function generate(jdId: string, section: KitSection): Promise<unknown> {
         schema: QuestionsSchema,
       });
       data.questions.sort((a, b) => (a.likelihood_rank || 99) - (b.likelihood_rank || 99));
-      store.saveKit(jdId, section, data, P5.version);
+      await store.saveKit(jdId, section, data, P5.version);
       return data;
     }
     case "cases": {
@@ -127,7 +127,7 @@ async function generate(jdId: string, section: KitSection): Promise<unknown> {
         user: P6.user(jd.data, jd.company, conceptNames(concepts)),
         schema: CasesSchema,
       });
-      store.saveKit(jdId, section, data, P6.version);
+      await store.saveKit(jdId, section, data, P6.version);
       return data;
     }
     case "situational": {
@@ -138,14 +138,14 @@ async function generate(jdId: string, section: KitSection): Promise<unknown> {
         user: P7.user(jd.data, jd.company),
         schema: SituationalSchema,
       });
-      store.saveKit(jdId, section, data, P7.version);
+      await store.saveKit(jdId, section, data, P7.version);
       return data;
     }
   }
 }
 
 export async function ensureSection(jdId: string, section: KitSection, force = false) {
-  const cached = store.getKit(jdId, section);
+  const cached = await store.getKit(jdId, section);
   if (cached && !force) return cached.data;
   return once(`kit:${jdId}:${section}`, () => generate(jdId, section));
 }
@@ -171,8 +171,8 @@ type ConceptQuestionMap = Record<string, { text: string; style: string }[]>;
 const CONCEPT_Q_KEY = "concept_questions";
 const CONCEPT_Q_BATCH = 15;
 
-function conceptQuestionMap(jdId: string): ConceptQuestionMap {
-  return (store.getKit(jdId, CONCEPT_Q_KEY)?.data as ConceptQuestionMap | undefined) ?? {};
+async function conceptQuestionMap(jdId: string): Promise<ConceptQuestionMap> {
+  return ((await store.getKit(jdId, CONCEPT_Q_KEY))?.data as ConceptQuestionMap | undefined) ?? {};
 }
 
 /**
@@ -181,13 +181,13 @@ function conceptQuestionMap(jdId: string): ConceptQuestionMap {
  */
 export async function ensureConceptQuestions(jdId: string): Promise<void> {
   const concepts = (await ensureSection(jdId, "concepts")) as Concepts;
-  const have = conceptQuestionMap(jdId);
+  const have = await conceptQuestionMap(jdId);
   const missing = concepts.topics.flatMap((t) =>
     t.items.filter((c) => !have[norm(c.name)]?.length).map((c) => ({ name: c.name, topic: t.name, what: c.what })),
   );
   if (!missing.length) return;
   await once(`concept-q:${jdId}`, async () => {
-    const jd = requireJD(jdId);
+    const jd = await requireJD(jdId);
     for (let i = 0; i < missing.length; i += CONCEPT_Q_BATCH) {
       const batch = missing.slice(i, i + CONCEPT_Q_BATCH);
       const out = await callLLM({
@@ -198,7 +198,7 @@ export async function ensureConceptQuestions(jdId: string): Promise<void> {
         schema: ConceptQuestionsSchema,
         maxTokens: 4000,
       });
-      const map = conceptQuestionMap(jdId);
+      const map = await conceptQuestionMap(jdId);
       for (const c of out.concepts) {
         // Match by the number we gave each concept; fall back to the name (the model may add text to it).
         const n = norm(c.name);
@@ -208,7 +208,7 @@ export async function ensureConceptQuestions(jdId: string): Promise<void> {
         const qs = c.questions.filter((q) => q.text.trim()).slice(0, 2);
         if (concept && qs.length) map[norm(concept.name)] = qs;
       }
-      store.saveKit(jdId, CONCEPT_Q_KEY, map, P13.version);
+      await store.saveKit(jdId, CONCEPT_Q_KEY, map, P13.version);
     }
   });
 }
@@ -237,8 +237,8 @@ export async function generateMore(
   return once(`more:${jdId}:${tab}:${topic ?? ""}`, async () => {
     const section = MORE_SECTION[tab];
     const current = await ensureSection(jdId, section);
-    const jd = requireJD(jdId);
-    const profile = requireProfile();
+    const jd = await requireJD(jdId);
+    const profile = await requireProfile();
     const lines = linesAsPrompt(profileLines(profile.data));
     const base = { name: P10.name, version: P10.version, system: P10.system };
     let added = 0;
@@ -306,7 +306,7 @@ export async function generateMore(
       data = { ...cur, [kind]: [...cur[kind], ...fresh] };
     }
 
-    if (added) store.saveKit(jdId, section, data, `${store.getKit(jdId, section)?.prompt_version ?? "v1"}+${P10.version}`);
+    if (added) await store.saveKit(jdId, section, data, `${(await store.getKit(jdId, section))?.prompt_version ?? "v1"}+${P10.version}`);
     return { data: added ? data : current, added };
   });
 }
@@ -314,10 +314,10 @@ export async function generateMore(
 /** STAR outline for one question, cached by question text. */
 export async function ensureOutline(jdId: string, question: string): Promise<Outline> {
   const key = "outline:" + question.slice(0, 200);
-  const cached = store.getKit(jdId, key);
+  const cached = await store.getKit(jdId, key);
   if (cached) return cached.data as Outline;
-  const jd = requireJD(jdId);
-  const profile = requireProfile();
+  const jd = await requireJD(jdId);
+  const profile = await requireProfile();
   const lines = profileLines(profile.data);
   const data = await callLLM({
     name: P8.name,
@@ -328,20 +328,20 @@ export async function ensureOutline(jdId: string, question: string): Promise<Out
   });
   const valid = new Set(lines.map((l) => l.ref));
   data.source_refs = data.source_refs.filter((r) => valid.has(r));
-  store.saveKit(jdId, key, data, P8.version);
+  await store.saveKit(jdId, key, data, P8.version);
   return data;
 }
 
 /** Model answer for one practice item, in the candidate's voice; cached by item text. */
 export async function ensureModelAnswer(jdId: string, itemId: string): Promise<ModelAnswer> {
-  const item = practiceItems(jdId).find((i) => i.id === itemId);
+  const item = (await practiceItems(jdId)).find((i) => i.id === itemId);
   if (!item) throw new LLMError("no item", "Practice item not found.", 404);
   const key = "model:" + item.text.slice(0, 200);
-  const cached = store.getKit(jdId, key);
+  const cached = await store.getKit(jdId, key);
   if (cached) return cached.data as ModelAnswer;
   return once(`${jdId}:${key}`, async () => {
-    const jd = requireJD(jdId);
-    const lines = profileLines(requireProfile().data);
+    const jd = await requireJD(jdId);
+    const lines = profileLines((await requireProfile()).data);
     const data = await callLLM({
       name: P11.name,
       version: P11.version,
@@ -364,7 +364,7 @@ export async function ensureModelAnswer(jdId: string, itemId: string): Promise<M
     // Placeholders such as "[add metric]" are lowercase words, so they are kept.
     const refs = /\s*[([](?:[A-Z]{1,4}\d+(?:\.[A-Z]+\d+)?(?:,\s*)?)+[)\]]/g;
     data.sections = data.sections.map((sec) => ({ ...sec, text: sec.text.replace(refs, "") }));
-    store.saveKit(jdId, key, data, P11.version);
+    await store.saveKit(jdId, key, data, P11.version);
     return data;
   });
 }
@@ -376,10 +376,10 @@ export async function ensureConceptNotes(jdId: string, topicIdx: number, itemIdx
   const concept = topic?.items[itemIdx];
   if (!topic || !concept) throw new LLMError("no concept", "That concept was not found.", 404);
   const key = "notes:" + concept.name.slice(0, 200);
-  const cached = store.getKit(jdId, key);
+  const cached = await store.getKit(jdId, key);
   if (cached) return cached.data as ConceptNotes;
   return once(`${jdId}:${key}`, async () => {
-    const jd = requireJD(jdId);
+    const jd = await requireJD(jdId);
     const data = await callLLM({
       name: P12.name,
       version: P12.version,
@@ -388,7 +388,7 @@ export async function ensureConceptNotes(jdId: string, topicIdx: number, itemIdx
       schema: ConceptNotesSchema,
       maxTokens: 4000,
     });
-    store.saveKit(jdId, key, data, P12.version);
+    await store.saveKit(jdId, key, data, P12.version);
     return data;
   });
 }
@@ -412,16 +412,16 @@ export type PracticeItem = {
 
 const short = (t: string, n: number) => (t.length > n ? `${t.slice(0, n)}…` : t);
 
-export function practiceItems(jdId: string): PracticeItem[] {
+export async function practiceItems(jdId: string): Promise<PracticeItem[]> {
   const items: PracticeItem[] = [];
-  const concepts = store.getKit(jdId, "concepts")?.data as Concepts | undefined;
-  const questions = store.getKit(jdId, "questions")?.data as Questions | undefined;
-  const cases = store.getKit(jdId, "cases")?.data as Cases | undefined;
-  const sit = store.getKit(jdId, "situational")?.data as Situational | undefined;
+  const concepts = (await store.getKit(jdId, "concepts"))?.data as Concepts | undefined;
+  const questions = (await store.getKit(jdId, "questions"))?.data as Questions | undefined;
+  const cases = (await store.getKit(jdId, "cases"))?.data as Cases | undefined;
+  const sit = (await store.getKit(jdId, "situational"))?.data as Situational | undefined;
 
   // Ids are positional (c-topic-item, q-n, …) and stay stable because Generate More only appends.
   // Each concept gets the interviewer-style questions from P13; until they exist, one plain fallback.
-  const conceptQs = conceptQuestionMap(jdId);
+  const conceptQs = await conceptQuestionMap(jdId);
   concepts?.topics.forEach((t, ti) =>
     t.items.forEach((c, ci) => {
       const qs = conceptQs[norm(c.name)] ?? [
@@ -521,11 +521,11 @@ export function practiceItems(jdId: string): PracticeItem[] {
 
 export type PlanItem = { id: string; text: string };
 
-export function studyPlan(jdId: string): PlanItem[] {
+export async function studyPlan(jdId: string): Promise<PlanItem[]> {
   const plan: PlanItem[] = [];
-  const concepts = store.getKit(jdId, "concepts")?.data as Concepts | undefined;
-  const cases = store.getKit(jdId, "cases")?.data as Cases | undefined;
-  const questions = store.getKit(jdId, "questions")?.data as Questions | undefined;
+  const concepts = (await store.getKit(jdId, "concepts"))?.data as Concepts | undefined;
+  const cases = (await store.getKit(jdId, "cases"))?.data as Cases | undefined;
+  const questions = (await store.getKit(jdId, "questions"))?.data as Questions | undefined;
   const all =
     concepts?.topics.flatMap((t, ti) => t.items.map((c, ci) => ({ c, id: `c-${ti}-${ci}` }))) ?? [];
   const ordered = [

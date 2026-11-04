@@ -34,7 +34,7 @@ Full spec: the Prepy PRD doc in the claude.ai Project (export it as Markdown to 
 | PDF text | `unpdf` |
 | DOCX text | `mammoth` |
 | Auth | Auth.js v5 (`next-auth@5` beta) in `src/auth.ts`: Google (when `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` are set) + email/password (scrypt hashes, `src/lib/users.ts`). JWT sessions signed with `AUTH_SECRET`. `src/proxy.ts` (Next 16's renamed middleware) sends signed-out page requests to /signin and answers API requests with 401 |
-| Storage | SQLite via Node's built-in `node:sqlite` (`data/prepy.db`, `src/lib/db.ts`; Node 22.13+, no native build tools). A "Prepare for a role" kit is stored as a `jds` row with `kind = 'role'` (empty company, data from P14), so the fit map, kit, practice and model answers work unchanged; `kind = 'jd'` is a user's JD. `src/lib/store.ts` keeps the same API but is scoped to the current user: every API route is wrapped in `withUser` (`src/lib/api-auth.ts`), which runs the work inside `runAsUser` (`src/lib/user-context.ts`). Background work (e.g. `after()`) must be wrapped in `runAsUser` too |
+| Storage | SQLite through the libSQL client (`@libsql/client`, `src/lib/db.ts`): the local file `data/prepy.db`, or a Turso database when `TURSO_DATABASE_URL` is set (the hosted demo). All data access is async (`await store.…`). A "Prepare for a role" kit is stored as a `jds` row with `kind = 'role'` (empty company, data from P14), so the fit map, kit, practice and model answers work unchanged; `kind = 'jd'` is a user's JD. `src/lib/store.ts` keeps the same API but is scoped to the current user: every API route is wrapped in `withUser` (`src/lib/api-auth.ts`), which runs the work inside `runAsUser` (`src/lib/user-context.ts`). Background work (e.g. `after()`) must be wrapped in `runAsUser` too |
 | Voice (MVP) | Browser Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`), `lang = 'en-IN'`, interim results on |
 | Icons | `lucide-react` (stroke icons only, no emoji in the UI) |
 | Font | DM Sans, self-hosted via `@fontsource-variable/dm-sans` (no network fetch at build) |
@@ -105,7 +105,8 @@ prepy/
       prep.ts           orchestration, caching, in-flight request sharing, kit prefetch, Generate More, grounding guards, practice queue, study plan
       profile-lines.ts  numbered profile lines (ED1, EX1.B2, AC1…) used for citations
       schemas.ts        Zod schemas
-      db.ts             SQLite connection + schema
+      db.ts             libSQL client (local file or Turso), schema + migrations, async all/get/run/batch helpers
+      demo.ts           hosted demo (DEMO_MODE=1): shared demo account + fictional profile, sign-up allowlist, daily AI caps, read-only demo account
       store.ts          per-user data store (same API as the MVP's JSON store); mock interviews in the mocks table
       mock.ts           mock interviews: question mix per length, follow-ups, scorecard
       impromptu.ts      impromptu speaking: topics, filler-word and pace stats (in code), feedback
@@ -172,6 +173,9 @@ GROQ_API_KEY=            # free key from https://console.groq.com/keys (fallback
 AUTH_SECRET=             # signs the sign-in cookie (generate a random value; see README)
 AUTH_GOOGLE_ID=          # optional: Google OAuth client (README has the steps)
 AUTH_GOOGLE_SECRET=
+TURSO_DATABASE_URL=      # hosted demo only (docs/DEPLOY.md); empty = local data/prepy.db
+TURSO_AUTH_TOKEN=
+# DEMO_MODE=1, DEMO_EMAIL, DEMO_PASSWORD, ALLOWED_SIGNUP_EMAILS, DAILY_AI_LIMIT_PER_USER, DAILY_AI_LIMIT_TOTAL: hosted demo only
 ```
 
 Free-tier note: on Gemini's free tier, Google may use prompts and outputs to improve its products. The resume text is sent to the model.
@@ -182,4 +186,4 @@ Video answers, RAG over case books, deployment beyond an optional Vercel preview
 
 ## 10. Build status
 
-Tasks 0–10 of `BUILD_PLAN.md` are built: app shell, store, LLM wrapper, resume and JD parsing, fit map, prep kit, answer outlines, practice with voice dictation, polish (errors, delete data, tutor placeholder) and the eval harness. Task 11 (deploy) is not done. Next work: test with real JDs, tune prompts (bump versions), run evals, then v1 features from the PRD.
+Tasks 0–10 of `BUILD_PLAN.md` are built: app shell, store, LLM wrapper, resume and JD parsing, fit map, prep kit, answer outlines, practice with voice dictation, polish (errors, delete data, tutor placeholder) and the eval harness. Task 11 (deploy): the app is ready for Vercel + Turso with a demo mode; steps in `docs/DEPLOY.md`. Next work: test with real JDs, tune prompts (bump versions), run evals, then v1 features from the PRD.

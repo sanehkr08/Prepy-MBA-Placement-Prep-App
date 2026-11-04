@@ -1,10 +1,10 @@
 /**
- * Data store for the signed-in user, backed by SQLite (src/lib/db.ts).
+ * Data store for the signed-in user, backed by SQLite through libSQL (src/lib/db.ts). All methods are async.
  * Every call works on the user set by `runAsUser` (src/lib/user-context.ts), so
  * routes and orchestration code never see another user's rows.
  */
 import { randomUUID } from "node:crypto";
-import { db, transaction } from "./db";
+import { all, batch, get, run, type Row } from "./db";
 import { currentUserId, maybeUserId } from "./user-context";
 import type { Profile, JDData, FitMap, PracticeScore } from "./schemas";
 
@@ -95,296 +95,294 @@ export type LLMCallRecord = {
   created_at: string;
 };
 
-type Row = Record<string, string | number | null>;
-
 const now = () => new Date().toISOString();
 const json = <T>(s: unknown): T => JSON.parse(String(s)) as T;
 const uid = () => currentUserId();
+const str = (v: unknown) => (v === null || v === undefined ? "" : String(v));
 
 function jdFromRow(r: Row): JDRecord {
   return {
-    id: String(r.id),
+    id: str(r.id),
     kind: r.kind === "role" ? "role" : "jd",
-    company: String(r.company),
-    role: String(r.role),
-    raw_text: String(r.raw_text),
+    company: str(r.company),
+    role: str(r.role),
+    raw_text: str(r.raw_text),
     data: json<JDData>(r.data),
-    created_at: String(r.created_at),
+    created_at: str(r.created_at),
   };
 }
 
+const mockFromRow = (r: Row): MockRecord => ({
+  id: str(r.id),
+  jd_id: str(r.jd_id),
+  data: json<MockData>(r.data),
+  created_at: str(r.created_at),
+  finished_at: r.finished_at ? str(r.finished_at) : null,
+});
+
+const gdFromRow = (r: Row): GDRecord => ({
+  id: str(r.id),
+  data: json<GDData>(r.data),
+  created_at: str(r.created_at),
+  finished_at: r.finished_at ? str(r.finished_at) : null,
+});
+
 export const store = {
   /* profile */
-  getProfile: () => {
-    const r = db().prepare("SELECT raw_text, data, updated_at FROM profiles WHERE user_id = ?").get(uid()) as Row | undefined;
-    return r ? { raw_text: String(r.raw_text), data: json<Profile>(r.data), updated_at: String(r.updated_at) } : null;
+  getProfile: async () => {
+    const r = await get("SELECT raw_text, data, updated_at FROM profiles WHERE user_id = ?", [uid()]);
+    return r ? { raw_text: str(r.raw_text), data: json<Profile>(r.data), updated_at: str(r.updated_at) } : null;
   },
-  saveProfile: (data: Profile, raw_text?: string) => {
-    const prev = store.getProfile();
+  saveProfile: async (data: Profile, raw_text?: string) => {
+    const prev = await store.getProfile();
     const rec = { raw_text: raw_text ?? prev?.raw_text ?? "", data, updated_at: now() };
-    db()
-      .prepare(
-        `INSERT INTO profiles (user_id, raw_text, data, updated_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(user_id) DO UPDATE SET raw_text = excluded.raw_text, data = excluded.data, updated_at = excluded.updated_at`,
-      )
-      .run(uid(), rec.raw_text, JSON.stringify(data), rec.updated_at);
+    await run(
+      `INSERT INTO profiles (user_id, raw_text, data, updated_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET raw_text = excluded.raw_text, data = excluded.data, updated_at = excluded.updated_at`,
+      [uid(), rec.raw_text, JSON.stringify(data), rec.updated_at],
+    );
     return rec;
   },
 
   /* job descriptions */
-  createJD: (input: Omit<JDRecord, "id" | "created_at" | "kind"> & { kind?: JDKind }) => {
+  createJD: async (input: Omit<JDRecord, "id" | "created_at" | "kind"> & { kind?: JDKind }) => {
     const rec: JDRecord = { ...input, kind: input.kind ?? "jd", id: randomUUID().slice(0, 8), created_at: now() };
-    db()
-      .prepare("INSERT INTO jds (id, user_id, company, role, raw_text, data, created_at, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
-      .run(rec.id, uid(), rec.company, rec.role, rec.raw_text, JSON.stringify(rec.data), rec.created_at, rec.kind);
+    await run("INSERT INTO jds (id, user_id, company, role, raw_text, data, created_at, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [
+      rec.id,
+      uid(),
+      rec.company,
+      rec.role,
+      rec.raw_text,
+      JSON.stringify(rec.data),
+      rec.created_at,
+      rec.kind,
+    ]);
     return rec;
   },
   /** The user's saved "Prepare for a role" kit for this role name, if any. */
-  findRoleJD: (roleName: string) => {
-    const r = db()
-      .prepare("SELECT * FROM jds WHERE user_id = ? AND kind = 'role' AND lower(role) = lower(?) ORDER BY created_at DESC LIMIT 1")
-      .get(uid(), roleName.trim()) as Row | undefined;
+  findRoleJD: async (roleName: string) => {
+    const r = await get(
+      "SELECT * FROM jds WHERE user_id = ? AND kind = 'role' AND lower(role) = lower(?) ORDER BY created_at DESC LIMIT 1",
+      [uid(), roleName.trim()],
+    );
     return r ? jdFromRow(r) : null;
   },
-  getJD: (id: string) => {
-    const r = db().prepare("SELECT * FROM jds WHERE id = ? AND user_id = ?").get(id, uid()) as Row | undefined;
+  getJD: async (id: string) => {
+    const r = await get("SELECT * FROM jds WHERE id = ? AND user_id = ?", [id, uid()]);
     return r ? jdFromRow(r) : null;
   },
-  listJDs: () => {
-    const rows = db()
-      .prepare(
-        `SELECT j.id, j.kind, j.company, j.role, j.created_at, f.data AS fit
-         FROM jds j LEFT JOIN fit_maps f ON f.user_id = j.user_id AND f.jd_id = j.id
-         WHERE j.user_id = ? ORDER BY j.created_at DESC`,
-      )
-      .all(uid()) as Row[];
+  listJDs: async () => {
+    const rows = await all(
+      `SELECT j.id, j.kind, j.company, j.role, j.created_at, f.data AS fit
+       FROM jds j LEFT JOIN fit_maps f ON f.user_id = j.user_id AND f.jd_id = j.id
+       WHERE j.user_id = ? ORDER BY j.created_at DESC`,
+      [uid()],
+    );
     return rows.map((r) => ({
-      id: String(r.id),
+      id: str(r.id),
       kind: (r.kind === "role" ? "role" : "jd") as JDKind,
-      company: String(r.company),
-      role: String(r.role),
-      created_at: String(r.created_at),
+      company: str(r.company),
+      role: str(r.role),
+      created_at: str(r.created_at),
       overall_label: r.fit ? (json<FitMap>(r.fit).overall_label ?? null) : null,
     }));
   },
 
-  /** Delete one JD and everything built from it (fit map, kit, plan, practice). False if not found. */
-  deleteJD: (id: string): boolean => {
+  /** Delete one JD and everything built from it (fit map, kit, plan, practice, mocks). False if not found. */
+  deleteJD: async (id: string): Promise<boolean> => {
     const user = uid();
-    return transaction(() => {
-      const gone = db().prepare("DELETE FROM jds WHERE id = ? AND user_id = ?").run(id, user).changes > 0;
-      if (gone) {
-        for (const t of ["fit_maps", "kits", "plans", "attempts", "mocks"]) {
-          db().prepare(`DELETE FROM ${t} WHERE user_id = ? AND jd_id = ?`).run(user, id);
-        }
-      }
-      return gone;
-    });
+    const [gone] = await batch([
+      { sql: "DELETE FROM jds WHERE id = ? AND user_id = ?", args: [id, user] },
+      ...["fit_maps", "kits", "plans", "attempts", "mocks"].map((t) => ({
+        sql: `DELETE FROM ${t} WHERE user_id = ? AND jd_id = ?`,
+        args: [user, id],
+      })),
+    ]);
+    return gone > 0;
   },
 
   /* fit maps */
-  getFitMap: (jdId: string) => {
-    const r = db().prepare("SELECT data, created_at FROM fit_maps WHERE user_id = ? AND jd_id = ?").get(uid(), jdId) as
-      | Row
-      | undefined;
-    return r ? { ...json<FitMap>(r.data), created_at: String(r.created_at) } : null;
+  getFitMap: async (jdId: string) => {
+    const r = await get("SELECT data, created_at FROM fit_maps WHERE user_id = ? AND jd_id = ?", [uid(), jdId]);
+    return r ? { ...json<FitMap>(r.data), created_at: str(r.created_at) } : null;
   },
-  saveFitMap: (jdId: string, fit: FitMap) => {
+  saveFitMap: async (jdId: string, fit: FitMap) => {
     const created_at = now();
-    db()
-      .prepare(
-        `INSERT INTO fit_maps (user_id, jd_id, data, created_at) VALUES (?, ?, ?, ?)
-         ON CONFLICT(user_id, jd_id) DO UPDATE SET data = excluded.data, created_at = excluded.created_at`,
-      )
-      .run(uid(), jdId, JSON.stringify(fit), created_at);
+    await run(
+      `INSERT INTO fit_maps (user_id, jd_id, data, created_at) VALUES (?, ?, ?, ?)
+       ON CONFLICT(user_id, jd_id) DO UPDATE SET data = excluded.data, created_at = excluded.created_at`,
+      [uid(), jdId, JSON.stringify(fit), created_at],
+    );
     return { ...fit, created_at };
   },
 
   /* kit sections, answer outlines, notes and other cached generations */
-  getKit: (jdId: string, key: string): KitRecord | null => {
-    const r = db()
-      .prepare("SELECT data, prompt_version, created_at FROM kits WHERE user_id = ? AND jd_id = ? AND key = ?")
-      .get(uid(), jdId, key) as Row | undefined;
-    return r ? { data: json(r.data), prompt_version: String(r.prompt_version), created_at: String(r.created_at) } : null;
+  getKit: async (jdId: string, key: string): Promise<KitRecord | null> => {
+    const r = await get("SELECT data, prompt_version, created_at FROM kits WHERE user_id = ? AND jd_id = ? AND key = ?", [uid(), jdId, key]);
+    return r ? { data: json(r.data), prompt_version: str(r.prompt_version), created_at: str(r.created_at) } : null;
   },
-  saveKit: (jdId: string, key: string, data: unknown, prompt_version: string): KitRecord => {
+  saveKit: async (jdId: string, key: string, data: unknown, prompt_version: string): Promise<KitRecord> => {
     const rec = { data, prompt_version, created_at: now() };
-    db()
-      .prepare(
-        `INSERT INTO kits (user_id, jd_id, key, data, prompt_version, created_at) VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(user_id, jd_id, key) DO UPDATE SET data = excluded.data,
-           prompt_version = excluded.prompt_version, created_at = excluded.created_at`,
-      )
-      .run(uid(), jdId, key, JSON.stringify(data), prompt_version, rec.created_at);
+    await run(
+      `INSERT INTO kits (user_id, jd_id, key, data, prompt_version, created_at) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, jd_id, key) DO UPDATE SET data = excluded.data,
+         prompt_version = excluded.prompt_version, created_at = excluded.created_at`,
+      [uid(), jdId, key, JSON.stringify(data), prompt_version, rec.created_at],
+    );
     return rec;
   },
 
   /* study plan */
-  getPlanDone: (jdId: string): string[] => {
-    const r = db().prepare("SELECT done FROM plans WHERE user_id = ? AND jd_id = ?").get(uid(), jdId) as Row | undefined;
+  getPlanDone: async (jdId: string): Promise<string[]> => {
+    const r = await get("SELECT done FROM plans WHERE user_id = ? AND jd_id = ?", [uid(), jdId]);
     return r ? json<string[]>(r.done) : [];
   },
-  setPlanDone: (jdId: string, done: string[]) => {
-    db()
-      .prepare(
-        `INSERT INTO plans (user_id, jd_id, done) VALUES (?, ?, ?)
-         ON CONFLICT(user_id, jd_id) DO UPDATE SET done = excluded.done`,
-      )
-      .run(uid(), jdId, JSON.stringify(done));
+  setPlanDone: async (jdId: string, done: string[]) => {
+    await run(
+      `INSERT INTO plans (user_id, jd_id, done) VALUES (?, ?, ?)
+       ON CONFLICT(user_id, jd_id) DO UPDATE SET done = excluded.done`,
+      [uid(), jdId, JSON.stringify(done)],
+    );
     return done;
   },
 
   /* practice */
-  addAttempt: (a: Omit<AttemptRecord, "id" | "created_at">) => {
+  addAttempt: async (a: Omit<AttemptRecord, "id" | "created_at">) => {
     const rec: AttemptRecord = { ...a, id: randomUUID().slice(0, 8), created_at: now() };
-    db()
-      .prepare(
-        `INSERT INTO attempts (id, user_id, jd_id, item_id, item_type, input_mode, answer_text, result, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(rec.id, uid(), rec.jd_id, rec.item_id, rec.item_type, rec.input_mode, rec.answer_text, JSON.stringify(rec.result), rec.created_at);
+    await run(
+      `INSERT INTO attempts (id, user_id, jd_id, item_id, item_type, input_mode, answer_text, result, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [rec.id, uid(), rec.jd_id, rec.item_id, rec.item_type, rec.input_mode, rec.answer_text, JSON.stringify(rec.result), rec.created_at],
+    );
     return rec;
   },
-  listAttempts: (jdId: string): AttemptRecord[] =>
-    (
-      db()
-        .prepare("SELECT * FROM attempts WHERE user_id = ? AND jd_id = ? ORDER BY created_at")
-        .all(uid(), jdId) as Row[]
-    ).map((r) => ({
-      id: String(r.id),
-      jd_id: String(r.jd_id),
-      item_id: String(r.item_id),
-      item_type: String(r.item_type),
+  listAttempts: async (jdId: string): Promise<AttemptRecord[]> =>
+    (await all("SELECT * FROM attempts WHERE user_id = ? AND jd_id = ? ORDER BY created_at", [uid(), jdId])).map((r) => ({
+      id: str(r.id),
+      jd_id: str(r.jd_id),
+      item_id: str(r.item_id),
+      item_type: str(r.item_type),
       input_mode: r.input_mode === "voice" ? "voice" : "typed",
-      answer_text: String(r.answer_text),
+      answer_text: str(r.answer_text),
       result: json<PracticeScore>(r.result),
-      created_at: String(r.created_at),
+      created_at: str(r.created_at),
     })),
 
   /* mock interviews */
-  createMock: (jdId: string, data: MockData): MockRecord => {
+  createMock: async (jdId: string, data: MockData): Promise<MockRecord> => {
     const rec: MockRecord = { id: randomUUID().slice(0, 8), jd_id: jdId, data, created_at: now(), finished_at: null };
-    db()
-      .prepare("INSERT INTO mocks (id, user_id, jd_id, data, created_at) VALUES (?, ?, ?, ?, ?)")
-      .run(rec.id, uid(), jdId, JSON.stringify(data), rec.created_at);
+    await run("INSERT INTO mocks (id, user_id, jd_id, data, created_at) VALUES (?, ?, ?, ?, ?)", [
+      rec.id,
+      uid(),
+      jdId,
+      JSON.stringify(data),
+      rec.created_at,
+    ]);
     return rec;
   },
-  getMock: (id: string): MockRecord | null => {
-    const r = db().prepare("SELECT * FROM mocks WHERE id = ? AND user_id = ?").get(id, uid()) as Row | undefined;
-    return r
-      ? {
-          id: String(r.id),
-          jd_id: String(r.jd_id),
-          data: json<MockData>(r.data),
-          created_at: String(r.created_at),
-          finished_at: r.finished_at ? String(r.finished_at) : null,
-        }
-      : null;
+  getMock: async (id: string): Promise<MockRecord | null> => {
+    const r = await get("SELECT * FROM mocks WHERE id = ? AND user_id = ?", [id, uid()]);
+    return r ? mockFromRow(r) : null;
   },
-  saveMock: (id: string, data: MockData, finished = false) => {
-    db()
-      .prepare("UPDATE mocks SET data = ?, finished_at = CASE WHEN ? THEN ? ELSE finished_at END WHERE id = ? AND user_id = ?")
-      .run(JSON.stringify(data), finished ? 1 : 0, now(), id, uid());
+  saveMock: async (id: string, data: MockData, finished = false) => {
+    await run("UPDATE mocks SET data = ?, finished_at = CASE WHEN ? THEN ? ELSE finished_at END WHERE id = ? AND user_id = ?", [
+      JSON.stringify(data),
+      finished ? 1 : 0,
+      now(),
+      id,
+      uid(),
+    ]);
   },
-  listMocks: (jdId: string): MockRecord[] =>
+  listMocks: async (jdId: string): Promise<MockRecord[]> =>
     (
-      db()
-        .prepare("SELECT * FROM mocks WHERE user_id = ? AND jd_id = ? AND finished_at IS NOT NULL ORDER BY created_at DESC")
-        .all(uid(), jdId) as Row[]
-    ).map((r) => ({
-      id: String(r.id),
-      jd_id: String(r.jd_id),
-      data: json<MockData>(r.data),
-      created_at: String(r.created_at),
-      finished_at: r.finished_at ? String(r.finished_at) : null,
-    })),
+      await all("SELECT * FROM mocks WHERE user_id = ? AND jd_id = ? AND finished_at IS NOT NULL ORDER BY created_at DESC", [uid(), jdId])
+    ).map(mockFromRow),
 
   /** Every finished mock interview, newest first, with the kit it belongs to. */
-  listAllMocks: () =>
+  listAllMocks: async () =>
     (
-      db()
-        .prepare(
-          `SELECT m.id, m.jd_id, m.data, m.created_at, j.role, j.company, j.kind
-           FROM mocks m JOIN jds j ON j.id = m.jd_id AND j.user_id = m.user_id
-           WHERE m.user_id = ? AND m.finished_at IS NOT NULL ORDER BY m.created_at DESC`,
-        )
-        .all(uid()) as Row[]
+      await all(
+        `SELECT m.id, m.jd_id, m.data, m.created_at, j.role, j.company, j.kind
+         FROM mocks m JOIN jds j ON j.id = m.jd_id AND j.user_id = m.user_id
+         WHERE m.user_id = ? AND m.finished_at IS NOT NULL ORDER BY m.created_at DESC`,
+        [uid()],
+      )
     ).map((r) => ({
-      id: String(r.id),
-      jd_id: String(r.jd_id),
+      id: str(r.id),
+      jd_id: str(r.jd_id),
       data: json<MockData>(r.data),
-      created_at: String(r.created_at),
-      kit: { role: String(r.role), company: String(r.company), kind: (r.kind === "role" ? "role" : "jd") as JDKind },
+      created_at: str(r.created_at),
+      kit: { role: str(r.role), company: str(r.company), kind: (r.kind === "role" ? "role" : "jd") as JDKind },
     })),
 
   /* impromptu speeches */
-  createSpeech: (data: SpeechData): SpeechRecord => {
+  createSpeech: async (data: SpeechData): Promise<SpeechRecord> => {
     const rec = { id: randomUUID().slice(0, 8), data, created_at: now() };
-    db().prepare("INSERT INTO speeches (id, user_id, data, created_at) VALUES (?, ?, ?, ?)").run(rec.id, uid(), JSON.stringify(data), rec.created_at);
+    await run("INSERT INTO speeches (id, user_id, data, created_at) VALUES (?, ?, ?, ?)", [rec.id, uid(), JSON.stringify(data), rec.created_at]);
     return rec;
   },
-  getSpeech: (id: string): SpeechRecord | null => {
-    const r = db().prepare("SELECT * FROM speeches WHERE id = ? AND user_id = ?").get(id, uid()) as Row | undefined;
-    return r ? { id: String(r.id), data: json<SpeechData>(r.data), created_at: String(r.created_at) } : null;
+  getSpeech: async (id: string): Promise<SpeechRecord | null> => {
+    const r = await get("SELECT * FROM speeches WHERE id = ? AND user_id = ?", [id, uid()]);
+    return r ? { id: str(r.id), data: json<SpeechData>(r.data), created_at: str(r.created_at) } : null;
   },
-  listSpeeches: (limit = 50): SpeechRecord[] =>
-    (db().prepare("SELECT * FROM speeches WHERE user_id = ? ORDER BY created_at DESC LIMIT ?").all(uid(), limit) as Row[]).map((r) => ({
-      id: String(r.id),
+  listSpeeches: async (limit = 50): Promise<SpeechRecord[]> =>
+    (await all("SELECT * FROM speeches WHERE user_id = ? ORDER BY created_at DESC LIMIT ?", [uid(), limit])).map((r) => ({
+      id: str(r.id),
       data: json<SpeechData>(r.data),
-      created_at: String(r.created_at),
+      created_at: str(r.created_at),
     })),
 
   /* group discussions */
-  createGD: (data: GDData): GDRecord => {
+  createGD: async (data: GDData): Promise<GDRecord> => {
     const rec: GDRecord = { id: randomUUID().slice(0, 8), data, created_at: now(), finished_at: null };
-    db().prepare("INSERT INTO gds (id, user_id, data, created_at) VALUES (?, ?, ?, ?)").run(rec.id, uid(), JSON.stringify(data), rec.created_at);
+    await run("INSERT INTO gds (id, user_id, data, created_at) VALUES (?, ?, ?, ?)", [rec.id, uid(), JSON.stringify(data), rec.created_at]);
     return rec;
   },
-  getGD: (id: string): GDRecord | null => {
-    const r = db().prepare("SELECT * FROM gds WHERE id = ? AND user_id = ?").get(id, uid()) as Row | undefined;
-    return r
-      ? { id: String(r.id), data: json<GDData>(r.data), created_at: String(r.created_at), finished_at: r.finished_at ? String(r.finished_at) : null }
-      : null;
+  getGD: async (id: string): Promise<GDRecord | null> => {
+    const r = await get("SELECT * FROM gds WHERE id = ? AND user_id = ?", [id, uid()]);
+    return r ? gdFromRow(r) : null;
   },
-  saveGD: (id: string, data: GDData, finished = false) => {
-    db()
-      .prepare("UPDATE gds SET data = ?, finished_at = CASE WHEN ? THEN ? ELSE finished_at END WHERE id = ? AND user_id = ?")
-      .run(JSON.stringify(data), finished ? 1 : 0, now(), id, uid());
+  saveGD: async (id: string, data: GDData, finished = false) => {
+    await run("UPDATE gds SET data = ?, finished_at = CASE WHEN ? THEN ? ELSE finished_at END WHERE id = ? AND user_id = ?", [
+      JSON.stringify(data),
+      finished ? 1 : 0,
+      now(),
+      id,
+      uid(),
+    ]);
   },
-  listGDs: (limit = 50): GDRecord[] =>
-    (
-      db()
-        .prepare("SELECT * FROM gds WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY created_at DESC LIMIT ?")
-        .all(uid(), limit) as Row[]
-    ).map((r) => ({
-      id: String(r.id),
-      data: json<GDData>(r.data),
-      created_at: String(r.created_at),
-      finished_at: r.finished_at ? String(r.finished_at) : null,
-    })),
+  listGDs: async (limit = 50): Promise<GDRecord[]> =>
+    (await all("SELECT * FROM gds WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY created_at DESC LIMIT ?", [uid(), limit])).map(gdFromRow),
   /** Topics of recent group discussions, finished or not (to avoid repeats). */
-  recentGDTopics: (limit = 15): string[] =>
-    (db().prepare("SELECT data FROM gds WHERE user_id = ? ORDER BY created_at DESC LIMIT ?").all(uid(), limit) as Row[]).map(
+  recentGDTopics: async (limit = 15): Promise<string[]> =>
+    (await all("SELECT data FROM gds WHERE user_id = ? ORDER BY created_at DESC LIMIT ?", [uid(), limit])).map(
       (r) => json<GDData>(r.data).topic,
     ),
 
   /* llm call log (also written by health checks, so the user is optional) */
-  logLLMCall: (c: Omit<LLMCallRecord, "created_at">) => {
-    db()
-      .prepare(
-        `INSERT INTO llm_calls (user_id, prompt_name, prompt_version, input_tokens, output_tokens, latency_ms, ok, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(maybeUserId(), c.prompt_name, c.prompt_version, c.input_tokens, c.output_tokens, c.latency_ms, c.ok ? 1 : 0, now());
+  logLLMCall: async (c: Omit<LLMCallRecord, "created_at">) => {
+    await run(
+      `INSERT INTO llm_calls (user_id, prompt_name, prompt_version, input_tokens, output_tokens, latency_ms, ok, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [maybeUserId(), c.prompt_name, c.prompt_version, c.input_tokens, c.output_tokens, c.latency_ms, c.ok ? 1 : 0, now()],
+    );
+  },
+  /** AI calls since a time: for one user, or for everyone (the demo's daily limits). */
+  countLLMCalls: async (sinceIso: string, userId?: string): Promise<number> => {
+    const r = userId
+      ? await get("SELECT COUNT(*) AS n FROM llm_calls WHERE created_at >= ? AND user_id = ?", [sinceIso, userId])
+      : await get("SELECT COUNT(*) AS n FROM llm_calls WHERE created_at >= ?", [sinceIso]);
+    return Number(r?.n ?? 0);
   },
 
   /* delete everything this user has stored (the account itself stays) */
-  deleteAll: () => {
+  deleteAll: async () => {
     const id = uid();
-    transaction(() => {
-      for (const t of ["profiles", "jds", "fit_maps", "kits", "plans", "attempts", "mocks", "speeches", "gds", "llm_calls"]) {
-        db().prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(id);
-      }
-    });
+    await batch(
+      ["profiles", "jds", "fit_maps", "kits", "plans", "attempts", "mocks", "speeches", "gds", "llm_calls"].map((t) => ({
+        sql: `DELETE FROM ${t} WHERE user_id = ?`,
+        args: [id],
+      })),
+    );
   },
 };

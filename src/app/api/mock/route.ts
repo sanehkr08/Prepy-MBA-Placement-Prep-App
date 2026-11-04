@@ -17,9 +17,9 @@ async function handleGET(req: Request) {
       verdict: r?.verdict ?? null,
     };
   };
-  if (jdId) return Response.json({ mocks: store.listMocks(jdId).map(summary) });
+  if (jdId) return Response.json({ mocks: (await store.listMocks(jdId)).map(summary) });
   return Response.json({
-    mocks: store.listAllMocks().map((m) => ({ ...summary(m), jd_id: m.jd_id, kit: m.kit })),
+    mocks: (await store.listAllMocks()).map((m) => ({ ...summary(m), jd_id: m.jd_id, kit: m.kit })),
   });
 }
 

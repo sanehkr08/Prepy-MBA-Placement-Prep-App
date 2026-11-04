@@ -10,7 +10,7 @@ export async function sessionUserId(): Promise<string | null> {
   const session = await auth();
   const id = session?.user?.id;
   // The account may have been removed while the cookie is still valid.
-  return id && findUserById(id) ? id : null;
+  return id && (await findUserById(id)) ? id : null;
 }
 
 export function withUser<C>(handler: (req: Request, ctx: C, userId: string) => Response | Promise<Response>) {

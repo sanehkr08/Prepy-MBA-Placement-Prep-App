@@ -4,7 +4,7 @@ import { createPasswordUser, SignUpError } from "@/lib/users";
 export async function POST(req: Request) {
   const body = (await req.json().catch(() => ({}))) as { name?: string; email?: string; password?: string };
   try {
-    createPasswordUser({ name: body.name ?? "", email: body.email ?? "", password: body.password ?? "" });
+    await createPasswordUser({ name: body.name ?? "", email: body.email ?? "", password: body.password ?? "" });
     return Response.json({ ok: true });
   } catch (err) {
     if (err instanceof SignUpError) return Response.json({ error: err.message }, { status: 400 });

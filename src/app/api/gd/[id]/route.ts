@@ -6,7 +6,7 @@ import { requireGD } from "@/lib/gd";
 async function handleGET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const g = requireGD(id);
+    const g = await requireGD(id);
     return Response.json({ gd: { id: g.id, created_at: g.created_at, ...g.data } });
   } catch (err) {
     return errorResponse(err);

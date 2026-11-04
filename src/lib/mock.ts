@@ -67,15 +67,15 @@ const toQuestion = (it: PracticeItem): MockQuestion => ({
 
 /** Start a mock interview for a JD or role kit. Builds any missing kit sections first. */
 export async function startMock(jdId: string, length: number, seconds: number): Promise<MockRecord> {
-  requireJD(jdId);
+  await requireJD(jdId);
   if (!MOCK_LENGTHS.includes(length as (typeof MOCK_LENGTHS)[number])) throw new LLMError("bad length", "Choose 5, 8 or 10 questions.", 400);
   if (!MOCK_SECONDS.includes(seconds as (typeof MOCK_SECONDS)[number])) throw new LLMError("bad time", "Choose 2, 3 or 4 minutes.", 400);
   for (const s of KIT_SECTIONS) await ensureSection(jdId, s);
   await ensureConceptQuestions(jdId).catch(() => undefined);
 
-  const all = practiceItems(jdId);
+  const all = await practiceItems(jdId);
   // Prefer questions not practised yet, so mocks don't repeat what the user has already done.
-  const done = new Set(store.listAttempts(jdId).map((a) => a.item_id));
+  const done = new Set((await store.listAttempts(jdId)).map((a) => a.item_id));
   const used = new Set<string>();
   const pickFrom = (pool: PracticeItem[]) => {
     const fresh = shuffle(pool.filter((i) => !used.has(i.id)));
@@ -103,11 +103,11 @@ export async function startMock(jdId: string, length: number, seconds: number): 
     .forEach(({ q }) => (q.followup_eligible = true));
 
   const data: MockData = { length: questions.length, seconds_per_question: seconds, questions, result: null };
-  return store.createMock(jdId, data);
+  return await store.createMock(jdId, data);
 }
 
-export function requireMock(id: string): MockRecord {
-  const m = store.getMock(id);
+export async function requireMock(id: string): Promise<MockRecord> {
+  const m = await store.getMock(id);
   if (!m) throw new LLMError("no mock", "This mock interview was not found.", 404);
   return m;
 }
@@ -123,7 +123,7 @@ export async function answerMock(
   answer: string,
   inputMode: "typed" | "voice",
 ): Promise<{ followup: string | null }> {
-  const m = requireMock(id);
+  const m = await requireMock(id);
   if (m.data.result) throw new LLMError("finished", "This mock interview is already finished.", 400);
   const q = m.data.questions[index];
   if (!q) throw new LLMError("no question", "That question is not part of this interview.", 400);
@@ -131,13 +131,13 @@ export async function answerMock(
 
   if (stage === "followup") {
     q.followup_answer = text;
-    store.saveMock(id, m.data);
+    await store.saveMock(id, m.data);
     return { followup: null };
   }
   q.answer = text;
   q.input_mode = inputMode;
   if (q.followup_eligible && !q.followup) {
-    const jd = requireJD(m.jd_id);
+    const jd = await requireJD(m.jd_id);
     try {
       const out = await callLLM({
         name: P15.name,
@@ -154,15 +154,15 @@ export async function answerMock(
       q.followup_eligible = false;
     }
   }
-  store.saveMock(id, m.data);
+  await store.saveMock(id, m.data);
   return { followup: q.followup || null };
 }
 
 /** Score the whole interview and save the scorecard. */
 export async function finishMock(id: string): Promise<MockScore> {
-  const m = requireMock(id);
+  const m = await requireMock(id);
   if (m.data.result) return m.data.result as MockScore;
-  const jd = requireJD(m.jd_id);
+  const jd = await requireJD(m.jd_id);
   const result = await callLLM({
     name: P16.name,
     version: P16.version,
@@ -195,6 +195,6 @@ export async function finishMock(id: string): Promise<MockScore> {
   );
   result.overall_score = Math.round(result.overall_score);
   m.data.result = result;
-  store.saveMock(id, m.data, true);
+  await store.saveMock(id, m.data, true);
   return result;
 }

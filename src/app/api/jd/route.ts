@@ -6,13 +6,13 @@ import { P2 } from "@/lib/prompts";
 import { store } from "@/lib/store";
 
 async function handleGET() {
-  return Response.json({ jds: store.listJDs() });
+  return Response.json({ jds: await store.listJDs() });
 }
 
 /** Add a JD (pasted or PDF) → parsed and saved. */
 async function handlePOST(req: Request) {
   try {
-    if (!store.getProfile()) {
+    if (!await store.getProfile()) {
       return Response.json({ error: "Save your profile first." }, { status: 400 });
     }
     const form = await req.formData();
@@ -27,7 +27,7 @@ async function handlePOST(req: Request) {
       user: P2.user(text, company, role),
       schema: JDSchema,
     });
-    const rec = store.createJD({ company, role: role || data.role, raw_text: text, data });
+    const rec = await store.createJD({ company, role: role || data.role, raw_text: text, data });
     return Response.json({ jd: { id: rec.id, company: rec.company, role: rec.role } });
   } catch (err) {
     if (err instanceof ExtractError) return Response.json({ error: err.message }, { status: 400 });

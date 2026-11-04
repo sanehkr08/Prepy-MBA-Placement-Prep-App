@@ -25,19 +25,23 @@ const MAIN_DB = path.join(ROOT, "data", "prepy.db");
 // Use a separate store for eval runs, seeded with the saved profile.
 fs.mkdirSync(EVAL_DATA, { recursive: true });
 process.env.PREPY_DATA_DIR = EVAL_DATA;
+// Evals always use their own local file, never the hosted demo database.
+delete process.env.TURSO_DATABASE_URL;
+delete process.env.TURSO_AUTH_TOKEN;
 
 async function main() {
   // The eval store is its own SQLite file with one eval user; all store calls run as that user.
-  const { db } = await import("../src/lib/db");
+  const { run } = await import("../src/lib/db");
   const { runAsUser } = await import("../src/lib/user-context");
-  db()
-    .prepare("INSERT OR IGNORE INTO users (id, email, name, created_at) VALUES ('eval', 'eval@prepy.local', 'Eval', ?)")
-    .run(new Date().toISOString());
+  await run("INSERT OR IGNORE INTO users (id, email, name, created_at) VALUES ('eval', 'eval@prepy.local', 'Eval', ?)", [
+    new Date().toISOString(),
+  ]);
   await runAsUser("eval", evalMain);
 }
 
 async function evalMain() {
-  const { DatabaseSync } = await import("node:sqlite");
+  const { createClient } = await import("@libsql/client");
+  const { pathToFileURL } = await import("node:url");
   const { store } = await import("../src/lib/store");
   const { callLLM, activeProvider, activeModel } = await import("../src/lib/llm");
   const { P2, P9 } = await import("../src/lib/prompts");
@@ -50,20 +54,21 @@ async function evalMain() {
   type Situational = import("../src/lib/schemas").Situational;
 
   if (!fs.existsSync(MAIN_DB)) throw new Error("No data/prepy.db. Sign in and save your profile in the app first.");
-  const mainDb = new DatabaseSync(MAIN_DB, { readOnly: true });
+  const mainDb = createClient({ url: pathToFileURL(MAIN_DB).href });
   const who = process.env.PREPY_EVAL_EMAIL?.trim().toLowerCase();
   const row = (
     who
-      ? mainDb
-          .prepare("SELECT p.raw_text, p.data FROM profiles p JOIN users u ON u.id = p.user_id WHERE u.email = ?")
-          .get(who)
-      : mainDb.prepare("SELECT raw_text, data FROM profiles ORDER BY updated_at DESC LIMIT 1").get()
-  ) as { raw_text: string; data: string } | undefined;
+      ? await mainDb.execute({
+          sql: "SELECT p.raw_text, p.data FROM profiles p JOIN users u ON u.id = p.user_id WHERE u.email = ?",
+          args: [who],
+        })
+      : await mainDb.execute("SELECT raw_text, data FROM profiles ORDER BY updated_at DESC LIMIT 1")
+  ).rows[0];
   mainDb.close();
   if (!row) throw new Error("No saved profile found. Save your profile in the app first.");
-  const mainProfile = { raw_text: row.raw_text, data: JSON.parse(row.data) };
-  store.deleteAll();
-  store.saveProfile(mainProfile.data, mainProfile.raw_text);
+  const mainProfile = { raw_text: String(row.raw_text), data: JSON.parse(String(row.data)) };
+  await store.deleteAll();
+  await store.saveProfile(mainProfile.data, mainProfile.raw_text);
   const lines = profileLines(mainProfile.data);
 
   const dirs = [path.join(ROOT, "evals", "testset"), path.join(ROOT, "evals", "testset", "private")];
@@ -103,7 +108,7 @@ async function evalMain() {
     console.log(`\n▶ ${base}`);
     const text = fs.readFileSync(file, "utf8");
     const data = await callLLM({ name: P2.name, version: P2.version, system: P2.system, user: P2.user(text, company, role), schema: JDSchema });
-    const jd = store.createJD({ company, role, raw_text: text, data });
+    const jd = await store.createJD({ company, role, raw_text: text, data });
     const fit = await prep.ensureFit(jd.id);
     const concepts = (await prep.ensureSection(jd.id, "concepts")) as Concepts;
     const questions = (await prep.ensureSection(jd.id, "questions")) as Questions;
@@ -186,12 +191,12 @@ async function evalMain() {
     }
 
   // Scoring consistency: same answer scored 3 times
-  const first = store.listJDs()[0];
-  const items = prep.practiceItems(first.id);
+  const first = (await store.listJDs())[0];
+  const items = await prep.practiceItems(first.id);
   const item = items.find((i) => i.type === "case") ?? items[0];
   const answer =
     "I would first clarify whether the problem is across the whole area or one segment, then break the metric into its drivers, check supply-side issues before demand-side ones, and act on the weakest driver while tracking it weekly.";
-  const jdRec = store.getJD(first.id)!;
+  const jdRec = (await store.getJD(first.id))!;
   const scores: number[] = [];
   for (let k = 0; k < 3; k++) {
     const r = await callLLM({

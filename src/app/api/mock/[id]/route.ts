@@ -7,8 +7,8 @@ import { requireJD } from "@/lib/prep";
 async function handleGET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await params;
-    const m = requireMock(id);
-    const jd = requireJD(m.jd_id);
+    const m = await requireMock(id);
+    const jd = await requireJD(m.jd_id);
     return Response.json({
       mock: {
         id: m.id,

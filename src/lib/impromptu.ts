@@ -34,8 +34,8 @@ export function speechStats(transcript: string, seconds: number) {
 export async function newTopic(categories: string[], exclude: string[] = []): Promise<ImpromptuTopic> {
   const valid = categories.filter((c): c is ImpromptuCategory => c in IMPROMPTU_CATEGORIES);
   if (!valid.length) throw new LLMError("no category", "Pick at least one kind of topic.", 400);
-  const roles = Array.from(new Set(store.listJDs().map((j) => j.role))).slice(0, 6);
-  const seen = [...store.listSpeeches(25).map((s) => s.data.topic), ...exclude];
+  const roles = Array.from(new Set((await store.listJDs()).map((j) => j.role))).slice(0, 6);
+  const seen = [...(await store.listSpeeches(25)).map((s) => s.data.topic), ...exclude];
   let out: ImpromptuTopic | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     out = await callLLM({
@@ -89,7 +89,7 @@ export async function scoreSpeech(input: {
     maxTokens: 2000,
   });
   result.overall_score = Math.round(result.overall_score);
-  return store.createSpeech({
+  return await store.createSpeech({
     topic,
     category: input.category.slice(0, 60),
     prep_seconds: input.prep_seconds,
