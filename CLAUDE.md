@@ -63,7 +63,8 @@ prepy/
       mocks/page.tsx                   Mock interviews across all kits
       guide/page.tsx                   How Prepy works
       impromptu/                       Impromptu speaking: set-up → prep countdown → speak timer → feedback (SpeechFeedback.tsx); [id] = a past speech
-      progress/ gd/ stories/ drill/    Planned features: placeholder pages (components/ComingSoon.tsx)
+      gd/                              Group discussion: 0 other participants (solo, 2 min) or 2–3 AI members over 3 rounds + your summary; GDFeedback.tsx; [id] = a past GD
+      progress/ stories/ drill/        Planned features: placeholder pages (components/ComingSoon.tsx)
       tutor/page.tsx                   Ask Prepy: v1 placeholder for the voice AI tutor (floating "Ask Prepy" button on every page)
       api/
         auth/[...nextauth]/route.ts    Auth.js endpoints
@@ -90,12 +91,17 @@ prepy/
         impromptu/topic/route.ts       POST a fresh topic (P17) from the chosen categories, avoiding recent ones
         impromptu/route.ts             GET past speeches, POST score + save a speech (P18)
         impromptu/[id]/route.ts        GET one past speech
+        gd/topic/route.ts              POST a fresh GD topic (P19)
+        gd/route.ts                    GET past GDs, POST start one (participants: 0 | 2 | 3)
+        gd/[id]/route.ts               GET one GD
+        gd/[id]/turn/route.ts          POST the user's move (start | speak | pass | summary); returns the members' next round (P20)
+        gd/[id]/finish/route.ts        POST feedback on the user's part (P21)
         data/route.ts                  DELETE all data
         health/llm/route.ts            GET quick API-key check
     components/   ui.tsx (shell, rail, Back/Next step bar, chips, cards, buttons), ProfileEditor.tsx, hooks.ts (useProfile, useDictation, useUndoableText)
     lib/
       llm.ts            callLLM (JSON + Zod + one retry + logging), errorResponse
-      prompts.ts        P1–P18 with versions + GROUNDING_RULE
+      prompts.ts        P1–P21 with versions + GROUNDING_RULE
       prep.ts           orchestration, caching, in-flight request sharing, kit prefetch, Generate More, grounding guards, practice queue, study plan
       profile-lines.ts  numbered profile lines (ED1, EX1.B2, AC1…) used for citations
       schemas.ts        Zod schemas
@@ -103,6 +109,8 @@ prepy/
       store.ts          per-user data store (same API as the MVP's JSON store); mock interviews in the mocks table
       mock.ts           mock interviews: question mix per length, follow-ups, scorecard
       impromptu.ts      impromptu speaking: topics, filler-word and pace stats (in code), feedback
+      gd.ts             group discussions: AI members, rounds, the user's moves, feedback
+      topics.ts         topic variety for GD and impromptu: random theme + style per request, topics shown this session excluded, near-repeat retry
       users.ts          accounts, password hashing, one-time import of data/prepy.json into the first account
       user-context.ts   runAsUser / currentUserId (AsyncLocalStorage)
       api-auth.ts       withUser(): signed-in check + user scope for API routes
@@ -139,7 +147,7 @@ prepy/
 - One task from `BUILD_PLAN.md` at a time. Do not start the next task until the owner confirms.
 - Keep the API key server-side only (API routes). Never expose it to the client.
 - Every new API route is wrapped in `withUser`. Never read or write data outside a user scope.
-- Every LLM call goes through `callLLM` with a Zod schema; it logs prompt name, tokens and latency to the store.
+- Every LLM call goes through `callLLM` with a Zod schema; it logs prompt name, tokens and latency to the store. `temperature` defaults to 0.4; topic generators use 0.95 for variety.
 - Grounding is enforced in code too: a Strong fit label without a valid profile ref is downgraded to Partial, and answer-outline refs not in the profile are dropped (`src/lib/prep.ts`).
 - Prompts live in `src/lib/prompts.ts`, each with a `version` string so evals can compare versions. Bump it when you change a prompt.
 - Handle errors visibly: empty or scanned PDF, missing API key, LLM failure, mic permission denied.
@@ -170,7 +178,7 @@ Free-tier note: on Gemini's free tier, Google may use prompts and outputs to imp
 
 ## 9. Out of scope for the MVP
 
-Video answers, RAG over case books, deployment beyond an optional Vercel preview. (Version 1 plan, in order: accounts and onboarding (done), home page with greeting and two paths (done), Prepare for a role (done), mock interview (done), impromptu speaking (done), group discussion.)
+Video answers, RAG over case books, deployment beyond an optional Vercel preview. (Version 1 plan, in order: accounts and onboarding (done), home page with greeting and two paths (done), Prepare for a role (done), mock interview (done), impromptu speaking (done), group discussion (done). Next candidates: My progress, Story bank, Daily drill (placeholders exist).)
 
 ## 10. Build status
 

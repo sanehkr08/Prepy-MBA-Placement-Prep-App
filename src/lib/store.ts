@@ -71,6 +71,20 @@ export type SpeechData = {
 };
 export type SpeechRecord = { id: string; data: SpeechData; created_at: string };
 
+/** One group discussion: the topic, the AI members, every turn, and the feedback once finished. */
+export type GDTurn = { speaker: string; text: string; round: number; kind: "point" | "open" | "summary" | "pass" };
+export type GDData = {
+  mode: "quick" | "full";
+  topic: string;
+  context: string;
+  members: { name: string; style: string }[];
+  turns: GDTurn[];
+  rounds_done: number; // AI rounds so far (full mode)
+  input_mode: "typed" | "voice";
+  result: unknown | null;
+};
+export type GDRecord = { id: string; data: GDData; created_at: string; finished_at: string | null };
+
 export type LLMCallRecord = {
   prompt_name: string;
   prompt_version: string;
@@ -320,6 +334,40 @@ export const store = {
       created_at: String(r.created_at),
     })),
 
+  /* group discussions */
+  createGD: (data: GDData): GDRecord => {
+    const rec: GDRecord = { id: randomUUID().slice(0, 8), data, created_at: now(), finished_at: null };
+    db().prepare("INSERT INTO gds (id, user_id, data, created_at) VALUES (?, ?, ?, ?)").run(rec.id, uid(), JSON.stringify(data), rec.created_at);
+    return rec;
+  },
+  getGD: (id: string): GDRecord | null => {
+    const r = db().prepare("SELECT * FROM gds WHERE id = ? AND user_id = ?").get(id, uid()) as Row | undefined;
+    return r
+      ? { id: String(r.id), data: json<GDData>(r.data), created_at: String(r.created_at), finished_at: r.finished_at ? String(r.finished_at) : null }
+      : null;
+  },
+  saveGD: (id: string, data: GDData, finished = false) => {
+    db()
+      .prepare("UPDATE gds SET data = ?, finished_at = CASE WHEN ? THEN ? ELSE finished_at END WHERE id = ? AND user_id = ?")
+      .run(JSON.stringify(data), finished ? 1 : 0, now(), id, uid());
+  },
+  listGDs: (limit = 50): GDRecord[] =>
+    (
+      db()
+        .prepare("SELECT * FROM gds WHERE user_id = ? AND finished_at IS NOT NULL ORDER BY created_at DESC LIMIT ?")
+        .all(uid(), limit) as Row[]
+    ).map((r) => ({
+      id: String(r.id),
+      data: json<GDData>(r.data),
+      created_at: String(r.created_at),
+      finished_at: r.finished_at ? String(r.finished_at) : null,
+    })),
+  /** Topics of recent group discussions, finished or not (to avoid repeats). */
+  recentGDTopics: (limit = 15): string[] =>
+    (db().prepare("SELECT data FROM gds WHERE user_id = ? ORDER BY created_at DESC LIMIT ?").all(uid(), limit) as Row[]).map(
+      (r) => json<GDData>(r.data).topic,
+    ),
+
   /* llm call log (also written by health checks, so the user is optional) */
   logLLMCall: (c: Omit<LLMCallRecord, "created_at">) => {
     db()
@@ -334,7 +382,7 @@ export const store = {
   deleteAll: () => {
     const id = uid();
     transaction(() => {
-      for (const t of ["profiles", "jds", "fit_maps", "kits", "plans", "attempts", "mocks", "speeches", "llm_calls"]) {
+      for (const t of ["profiles", "jds", "fit_maps", "kits", "plans", "attempts", "mocks", "speeches", "gds", "llm_calls"]) {
         db().prepare(`DELETE FROM ${t} WHERE user_id = ?`).run(id);
       }
     });

@@ -95,6 +95,14 @@ CREATE TABLE IF NOT EXISTS speeches (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS speeches_user ON speeches(user_id);
+CREATE TABLE IF NOT EXISTS gds (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  finished_at TEXT
+);
+CREATE INDEX IF NOT EXISTS gds_user ON gds(user_id);
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
@@ -109,7 +117,7 @@ function migrate(conn: DatabaseSync) {
 }
 
 // Bump when SCHEMA or migrate() changes, so a running server applies it without a restart.
-const SCHEMA_VERSION = 4;
+const SCHEMA_VERSION = 5;
 
 // One connection per server process (kept on globalThis so dev hot reloads reuse it).
 const g = globalThis as unknown as { prepyDb?: DatabaseSync; prepySchemaVersion?: number };

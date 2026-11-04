@@ -30,6 +30,8 @@ export default function ImpromptuPage() {
   const [speak, setSpeak] = useState(120);
   const [mode, setMode] = useState<"voice" | "typed">("voice");
   const [topic, setTopic] = useState<Topic | null>(null);
+  // Every topic shown in this visit, so "Different topic" never brings one back.
+  const shown = useRef<string[]>([]);
   const [showAngle, setShowAngle] = useState(false);
   const [transcript, setTranscript] = useState("");
   // Seconds left in the current countdown; null when no countdown is running.
@@ -60,8 +62,9 @@ export default function ImpromptuPage() {
       const r = await api<{ topic: Topic }>("/api/impromptu/topic", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ categories: cats }),
+        body: JSON.stringify({ categories: cats, exclude: shown.current }),
       });
+      shown.current = [...shown.current, r.topic.topic];
       setTopic(r.topic);
       setTranscript("");
       setPhase("prep");

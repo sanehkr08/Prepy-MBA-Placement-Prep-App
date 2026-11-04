@@ -1,5 +1,5 @@
 /**
- * All prompts P1–P18. Bump a prompt's version when you change it, so evals can
+ * All prompts P1–P21. Bump a prompt's version when you change it, so evals can
  * compare versions (BUILD_PLAN Task 10).
  */
 import type { JDData, FitMap, Concepts, Questions, Cases, Situational } from "./schemas";
@@ -415,10 +415,11 @@ export type ImpromptuCategory = keyof typeof IMPROMPTU_CATEGORIES;
 
 export const P17 = {
   name: "P17_impromptu_topic",
-  version: "v1",
+  version: "v2",
   system: `You set extempore (impromptu speaking) topics for MBA placement and B-school practice. A good topic is specific, debatable or reflective, can be spoken about for one to three minutes without research, and fits an Indian B-school context. Vary the type: a debate ("Should…"), an opinion ("Is…"), a reflection ("A time…"), or a short scenario. Never repeat or closely reword a recent topic.`,
-  user: (args: { category: ImpromptuCategory; roles: string[]; recent: string[] }) => `CATEGORY: ${IMPROMPTU_CATEGORIES[args.category]}
-${args.category === "role" ? `Target roles: ${args.roles.length ? args.roles.join(", ") : "general management"}\n` : ""}Recent topics to avoid:
+  user: (args: { category: ImpromptuCategory; roles: string[]; recent: string[]; theme: string; style: string }) => `CATEGORY: ${IMPROMPTU_CATEGORIES[args.category]}
+${args.category === "role" ? `Target roles: ${args.roles.length ? args.roles.join(", ") : "general management"}\n` : `Theme for this topic: ${args.theme}\n`}Style for this topic: ${args.style}
+Topics already used (do NOT repeat these or anything on the same subject):
 ${args.recent.length ? args.recent.map((t) => `- ${t}`).join("\n") : "(none)"}
 
 Return JSON: {"topic": the topic as the moderator would say it (one sentence), "category": a two- or three-word label, "angle": one short hint on a possible way in (not a full answer)}`,
@@ -459,6 +460,71 @@ Return JSON:
  "strengths": [2 or 3 specific things that worked],
  "improvements": [3 specific things to do differently next time, most important first],
  "outline": [3 to 5 short lines: a strong way to structure an answer on this topic]}`,
+};
+
+/* P19 — Group discussion topic */
+export const P19 = {
+  name: "P19_gd_topic",
+  version: "v2",
+  system: `You set group discussion (GD) topics for MBA admissions and campus placements in India. A good GD topic is debatable, has clear sides, and can be discussed without research: business, economy, technology, policy, society, or an abstract statement. Vary the type and never repeat or closely reword a recent topic.`,
+  user: (args: { recent: string[]; theme: string; style: string }) => `Theme for this topic: ${args.theme}
+Style for this topic: ${args.style}
+
+Topics already used (do NOT repeat these or anything on the same subject):
+${args.recent.length ? args.recent.map((t) => `- ${t}`).join("\n") : "(none)"}
+
+Return JSON: {"topic": the GD topic as the moderator would announce it, "context": one or two neutral sentences of background, no opinion}`,
+};
+
+/* P20 — Group discussion round: what each AI member says next */
+export const P20 = {
+  name: "P20_gd_round",
+  version: "v1",
+  system: `You voice the other participants in a campus group discussion. Each member keeps their own style and stance throughout. In each round, every member speaks once, in the given order, for 2 to 4 sentences of natural spoken English.
+They respond to what has actually been said: agree, counter, add a new angle, or ask a question. When the candidate (the lines marked "You") made a point, at least one member responds to it directly, speaking to them as "you" in lowercase, e.g. "as you said" or "your point about…" (never "You made").
+Argue from reasoning, trade-offs and widely known examples. Never quote numbers, percentages, studies or sources: they would be made up. Never be rude. Do not summarise the whole discussion unless it is the final round.`,
+  user: (args: { topic: string; context: string; members: { name: string; style: string }[]; transcript: string; round: number; rounds: number }) => `GD TOPIC: ${args.topic}
+Background: ${args.context}
+
+MEMBERS (speak in this order):
+${args.members.map((m) => `- ${m.name}: ${m.style}`).join("\n")}
+
+DISCUSSION SO FAR:
+${args.transcript || "(nobody has spoken yet: this is the opening round)"}
+
+This is round ${args.round} of ${args.rounds}.${args.round === args.rounds ? " It is the last round: members may start converging." : ""}
+
+Return JSON: {"points": [{"name": member name, "text": what they say}] (one per member, in order)}`,
+};
+
+/* P21 — Group discussion feedback on the candidate's contribution */
+export const P21 = {
+  name: "P21_gd_feedback",
+  version: "v1",
+  system: `You are a GD panel observer for MBA placements. Judge only the candidate (the lines marked "You"), in the context of the whole discussion, on: content (relevant, insightful, examples), participation (entered at good moments, contributed enough, initiated if they opened), listening (built on or responded to others' points), clarity (concise, easy to follow), and leadership (moved the group forward, summarised well). Score each 1 to 5, give an overall score out of 100 and a verdict.
+Speak to the candidate directly as "you". Passing a turn is allowed but counts against participation.
+Lines may be speech transcripts: ignore small transcription errors.`,
+  user: (args: { topic: string; mode: "quick" | "full"; transcript: string; yourTurns: { index: number; text: string }[] }) => `GD TOPIC: ${args.topic}
+${
+  args.mode === "quick"
+    ? `QUICK MODE: the candidate gave one contribution on their own, with no other members. Judge participation on how complete and confident it is, listening on whether it fairly acknowledges other viewpoints or counter-arguments, and leadership on whether it proposes a clear way forward. Do not penalise the absence of other speakers.`
+    : ""
+}
+
+FULL DISCUSSION:
+${args.transcript}
+
+THE CANDIDATE'S TURNS (numbered):
+${args.yourTurns.map((t) => `[${t.index}] ${t.text || "(passed)"}`).join("\n")}
+
+Return JSON:
+{"overall_score": 0-100,
+ "verdict": one of "Stand-out performance", "Solid contributor", "Average", "Needs more practice",
+ "summary": two sentences on how you did,
+ "scores": {"content": 1-5, "participation": 1-5, "listening": 1-5, "clarity": 1-5, "leadership": 1-5},
+ "strengths": [2 or 3 specific strengths, citing what you said],
+ "improvements": [3 specific things to do next time, most important first],
+ "turn_feedback": [{"index": turn number, "comment": one sentence on that turn}] (one per candidate turn)}`,
 };
 
 export const conceptNames = (c: Concepts) => c.topics.flatMap((t) => t.items.map((i) => i.name));

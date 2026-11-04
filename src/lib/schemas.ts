@@ -246,6 +246,25 @@ export const ImpromptuScoreSchema = z.object({
 });
 export type ImpromptuScore = z.infer<typeof ImpromptuScoreSchema>;
 
+/* ---------- Group discussion (P19 topic, P20 AI round, P21 feedback) ---------- */
+
+export const GDTopicSchema = z.object({ topic: z.string(), context: z.string().default("") });
+
+export const GDRoundSchema = z.object({
+  points: z.array(z.object({ name: z.string(), text: z.string() })),
+});
+
+export const GDScoreSchema = z.object({
+  overall_score: z.number().min(0).max(100),
+  verdict: z.string(),
+  summary: z.string(),
+  scores: z.object({ content: Score, participation: Score, listening: Score, clarity: Score, leadership: Score }),
+  strengths: z.array(z.string()).default([]),
+  improvements: z.array(z.string()).default([]),
+  turn_feedback: z.array(z.object({ index: z.coerce.number(), comment: z.string() })).default([]),
+});
+export type GDScore = z.infer<typeof GDScoreSchema>;
+
 /* ---------- Kit section names ---------- */
 
 export const KIT_SECTIONS = ["concepts", "questions", "cases", "situational"] as const;

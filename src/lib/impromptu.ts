@@ -6,6 +6,7 @@ import { callLLM, LLMError } from "./llm";
 import { store, type SpeechRecord } from "./store";
 import { ImpromptuScoreSchema, ImpromptuTopicSchema, type ImpromptuTopic } from "./schemas";
 import { IMPROMPTU_CATEGORIES, P17, P18, type ImpromptuCategory } from "./prompts";
+import { IMPROMPTU_STYLES, THEMES, isRepeat, pick } from "./topics";
 
 export const PREP_SECONDS = [15, 30, 60] as const;
 export const SPEAK_SECONDS = [60, 120, 180] as const;
@@ -26,21 +27,29 @@ export function speechStats(transcript: string, seconds: number) {
   return { words, wpm, fillers, filler_total };
 }
 
-/** A fresh topic from one of the chosen categories, avoiding the user's recent topics. */
-export async function newTopic(categories: string[]): Promise<ImpromptuTopic> {
+/**
+ * A fresh topic from one of the chosen categories: a random theme and style each time,
+ * never one already seen (`exclude`: topics shown in this session).
+ */
+export async function newTopic(categories: string[], exclude: string[] = []): Promise<ImpromptuTopic> {
   const valid = categories.filter((c): c is ImpromptuCategory => c in IMPROMPTU_CATEGORIES);
   if (!valid.length) throw new LLMError("no category", "Pick at least one kind of topic.", 400);
-  const category = valid[Math.floor(Math.random() * valid.length)];
   const roles = Array.from(new Set(store.listJDs().map((j) => j.role))).slice(0, 6);
-  const recent = store.listSpeeches(15).map((s) => s.data.topic);
-  return callLLM({
-    name: P17.name,
-    version: P17.version,
-    system: P17.system,
-    user: P17.user({ category, roles, recent }),
-    schema: ImpromptuTopicSchema,
-    maxTokens: 300,
-  });
+  const seen = [...store.listSpeeches(25).map((s) => s.data.topic), ...exclude];
+  let out: ImpromptuTopic | null = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    out = await callLLM({
+      name: P17.name,
+      version: P17.version,
+      system: P17.system,
+      user: P17.user({ category: pick(valid), roles, recent: seen, theme: pick(THEMES), style: pick(IMPROMPTU_STYLES) }),
+      schema: ImpromptuTopicSchema,
+      maxTokens: 300,
+      temperature: 0.95,
+    });
+    if (!isRepeat(out.topic, seen)) break;
+  }
+  return out!;
 }
 
 /** Score one speech and save it. */

@@ -108,11 +108,13 @@ const LAST_TIMEOUT_MS = 120_000;
 // instead of paying a failed round trip on every call.
 const coolingUntil: Partial<Record<Provider, number>> = {};
 
-type CallFn = (system: string, user: string, maxTokens: number, signal: AbortSignal) => Promise<RawResult>;
+/** Output length and randomness for one call (temperature: 0.4 by default; higher for creative work like topics). */
+type Gen = { maxTokens: number; temperature: number };
+type CallFn = (system: string, user: string, gen: Gen, signal: AbortSignal) => Promise<RawResult>;
 
 /* ---------------- provider calls ---------------- */
 
-async function callGemini(system: string, user: string, maxTokens: number, signal: AbortSignal): Promise<RawResult> {
+async function callGemini(system: string, user: string, gen: Gen, signal: AbortSignal): Promise<RawResult> {
   const key = requireKey("gemini");
   const model = activeModel("gemini");
   const base = process.env.GEMINI_BASE_URL || "https://generativelanguage.googleapis.com";
@@ -125,9 +127,9 @@ async function callGemini(system: string, user: string, maxTokens: number, signa
       contents: [{ role: "user", parts: [{ text: user }] }],
       generationConfig: {
         responseMimeType: "application/json",
-        temperature: 0.4,
+        temperature: gen.temperature,
         // Flash models may "think" before answering; leave room for that plus the JSON.
-        maxOutputTokens: Math.max(maxTokens * 2, 8192),
+        maxOutputTokens: Math.max(gen.maxTokens * 2, 8192),
         // Gemini 3 models: keep thinking short, it is most of the wait. (2.x models reject this field.)
         ...(/gemini-2\./.test(model) ? {} : { thinkingConfig: { thinkingLevel: "low" } }),
       },
@@ -165,7 +167,7 @@ async function callOpenAICompat(
   provider: keyof typeof OPENAI_COMPAT,
   system: string,
   user: string,
-  maxTokens: number,
+  gen: Gen,
   signal: AbortSignal,
 ): Promise<RawResult> {
   const key = requireKey(provider);
@@ -178,9 +180,9 @@ async function callOpenAICompat(
       model: activeModel(provider),
       // Groq's default gpt-oss model reasons before answering: leave room for that, keep it short.
       ...(activeModel(provider).startsWith("openai/gpt-oss")
-        ? { max_tokens: Math.max(maxTokens, 2048), reasoning_effort: "low" }
-        : { max_tokens: maxTokens }),
-      temperature: 0.4,
+        ? { max_tokens: Math.max(gen.maxTokens, 2048), reasoning_effort: "low" }
+        : { max_tokens: gen.maxTokens }),
+      temperature: gen.temperature,
       response_format: { type: "json_object" },
       messages: [
         { role: "system", content: system },
@@ -205,14 +207,15 @@ async function callOpenAICompat(
 }
 
 let anthropic: Anthropic | null = null;
-async function callAnthropic(system: string, user: string, maxTokens: number, signal: AbortSignal): Promise<RawResult> {
+async function callAnthropic(system: string, user: string, gen: Gen, signal: AbortSignal): Promise<RawResult> {
   const key = requireKey("anthropic");
   anthropic = anthropic ?? new Anthropic({ apiKey: key });
   try {
     const res = await anthropic.messages.create(
       {
         model: activeModel("anthropic"),
-        max_tokens: maxTokens,
+        // No temperature: current Claude models don't take sampling settings.
+        max_tokens: gen.maxTokens,
         system,
         messages: [{ role: "user", content: user }],
       },
@@ -231,18 +234,18 @@ async function callAnthropic(system: string, user: string, maxTokens: number, si
 
 const PROVIDER_FNS: Record<Provider, CallFn> = {
   gemini: callGemini,
-  groq: (s, u, m, sig) => callOpenAICompat("groq", s, u, m, sig),
-  xai: (s, u, m, sig) => callOpenAICompat("xai", s, u, m, sig),
+  groq: (s, u, g, sig) => callOpenAICompat("groq", s, u, g, sig),
+  xai: (s, u, g, sig) => callOpenAICompat("xai", s, u, g, sig),
   anthropic: callAnthropic,
 };
 
 const isTimeout = (err: unknown) => err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError");
 
-async function callOne(provider: Provider, system: string, user: string, maxTokens: number, canFallBack: boolean) {
+async function callOne(provider: Provider, system: string, user: string, gen: Gen, canFallBack: boolean) {
   const fn = PROVIDER_FNS[provider];
   const timeout = canFallBack ? TIMEOUT_MS : LAST_TIMEOUT_MS;
   try {
-    return await fn(system, user, maxTokens, AbortSignal.timeout(timeout));
+    return await fn(system, user, gen, AbortSignal.timeout(timeout));
   } catch (err) {
     if (err instanceof HTTPError && err.status === 429) {
       // A long retry delay means the daily quota is gone: stop asking this provider for now.
@@ -251,14 +254,14 @@ async function callOne(provider: Provider, system: string, user: string, maxToke
       // unless another provider can take over straight away.
       else if (!canFallBack) {
         await sleep(Math.max(err.retryAfterSec, 10) * 1000);
-        return fn(system, user, maxTokens, AbortSignal.timeout(timeout));
+        return fn(system, user, gen, AbortSignal.timeout(timeout));
       }
     }
     throw err;
   }
 }
 
-async function callProvider(system: string, user: string, maxTokens: number): Promise<RawResult> {
+async function callProvider(system: string, user: string, gen: Gen): Promise<RawResult> {
   const all = providerChain();
   const ready = all.filter((p) => (coolingUntil[p] ?? 0) < Date.now());
   const chain = ready.length ? ready : all;
@@ -266,7 +269,7 @@ async function callProvider(system: string, user: string, maxTokens: number): Pr
     const provider = chain[i];
     const canFallBack = i < chain.length - 1;
     try {
-      const raw = await callOne(provider, system, user, maxTokens, canFallBack);
+      const raw = await callOne(provider, system, user, gen, canFallBack);
       lastUsed = provider;
       return raw;
     } catch (err) {
@@ -316,6 +319,8 @@ export async function callLLM<S extends z.ZodTypeAny>(opts: {
   user: string;
   schema: S;
   maxTokens?: number;
+  /** 0.4 by default; raise it (up to about 1) when variety matters more than consistency. */
+  temperature?: number;
 }): Promise<z.infer<S>> {
   const system =
     opts.system + "\n\nRespond with ONE valid JSON object only. No prose, no markdown fences.";
@@ -327,7 +332,7 @@ export async function callLLM<S extends z.ZodTypeAny>(opts: {
     let inputTokens = 0;
     let outputTokens = 0;
     try {
-      const raw = await callProvider(system, userContent, opts.maxTokens ?? 6000);
+      const raw = await callProvider(system, userContent, { maxTokens: opts.maxTokens ?? 6000, temperature: opts.temperature ?? 0.4 });
       inputTokens = raw.inputTokens;
       outputTokens = raw.outputTokens;
       const parsed = opts.schema.safeParse(extractJSON(raw.text));
