@@ -1,106 +1,113 @@
-# Prepy
+<p align="center">
+  <img src="public/logo-mark.png" alt="Prepy logo" width="72" />
+</p>
 
-Interview prep from your own story. Upload your resume once, add a job description for **any role**, and Prepy gives you:
+<h1 align="center">Prepy</h1>
 
-1. **Fit and Gap Map**: every JD requirement marked Strong, Partial or Gap, with the resume line behind it.
-2. **Role prep kit**: concepts to study, likely interview questions, case studies, situational and behavioral questions, resume and gap questions, and a study plan.
-3. **Answer outlines** (STAR) built only from your real experience, with `[placeholders]` where details are missing.
-4. **Practice**: answer by typing or **speaking** (voice dictation) and get rubric-scored feedback with a stronger answer.
+<p align="center">
+  <strong>AI interview prep for MBA placements, built from your own story.</strong><br />
+  Upload your resume once. Pick a role or paste a job description. Prepy maps your fit, builds a prep kit,
+  and lets you practise by speaking, with honest, rubric-based feedback.
+</p>
 
-Built as an MBA product-management project. Spec: the Prepy PRD. Rules for AI coding agents: `CLAUDE.md`. Build steps: `BUILD_PLAN.md`.
+<p align="center">
+  Next.js 16 · TypeScript · Tailwind CSS · SQLite · Auth.js · Gemini / Groq / Claude · Zod · Web Speech API
+</p>
 
-## Run it on your computer (Windows, PowerShell)
+<!--
+  Screenshots: save images in docs/screenshots/ and add them here, e.g.
+  ![Home](docs/screenshots/home.png)
+-->
 
-You need Node.js 22.13 or newer (`node -v` to check; Prepy uses its built-in SQLite; install the LTS from https://nodejs.org if missing) and one API key. **Gemini has a free tier**: create a key at https://aistudio.google.com/apikey (sign in with Google, click *Create API key*). **Groq** (not Grok) also has a free tier: create a key at https://console.groq.com/keys and paste it after `GROQ_API_KEY=`. With both set, Groq takes over when Gemini hits its limit. Grok (`XAI_API_KEY`) and Claude (`ANTHROPIC_API_KEY`) also work but are paid.
+---
 
-Easiest: double-click `setup.bat`. It installs packages, creates `.env.local`, makes the first Git commit and opens VS Code. Or do it by hand:
+## The problem
 
-```powershell
-cd "$HOME\projects\prepy"
-npm install
-copy .env.example .env.local
-code .env.local      # paste your key after GEMINI_API_KEY=
-npm run dev
+MBA placement season compresses dozens of interviews, across very different roles, into a few weeks. Candidates prepare with generic question banks that ignore both the specific job description and their own background. The usual AI shortcut, "write me an answer", is worse: it invents experience the candidate does not have, which falls apart at the first follow-up question.
+
+## What Prepy does
+
+| | Feature | What you get |
+| --- | --- | --- |
+| 1 | **Fit and Gap Map** | Every requirement in a JD (or a standard role profile) marked **Strong**, **Partial** or **Gap**, citing the exact resume line behind it, with a tip on how to use it in the interview. |
+| 2 | **Prep for any role, with or without a JD** | Pick a common role (Product Manager, Business Analyst, Consultant, Sales, Marketing, Finance, Operations, HR), type any role, or upload a JD. |
+| 3 | **Role prep kit** | Concepts grouped by topic, with **Read more** study notes (key topics, worked examples, common mistakes, likely questions); frequently asked questions; cases; situational, behavioral, resume and gap questions; a study plan. **Generate More** extends any section without repeats. |
+| 4 | **Practice** | Answer by typing or **speaking** (live transcription, undo/redo). Rubric scores for structure, relevance, evidence and clarity, then a **model answer** written from your real resume. |
+| 5 | **Mock interviews** | Timed questions read aloud, an opener of "Tell me about yourself", up to two **follow-ups** based on what you actually said, then a full scorecard with a verdict and per-question feedback. |
+| 6 | **Impromptu speaking** | A fresh topic every time, a prep countdown, a speaking timer, and feedback with **pace (words per minute) and filler words measured exactly**. |
+| 7 | **Group discussion** | Practise alone, or with 2–3 AI members who each have a distinct style (analyst, devil's advocate, consensus builder) over three rounds. Feedback on content, participation, building on others, clarity and leadership. |
+
+Plus accounts (Google or email), onboarding from a resume, a sectioned profile, history for every practice mode, and a home page with a fresh, slightly cheeky MBA-flavoured greeting on every visit.
+
+## How the AI is kept honest
+
+The core product rule is: **never invent the candidate's experience.** It is enforced in code, not only in prompts.
+
+- **Grounded on numbered resume lines.** The profile is turned into numbered lines (`EX2.B4`, `ED1`, …). Every claim about the candidate must cite one.
+- **Guards after every call.** A "Strong" fit without a valid citation is downgraded to "Partial". Citations that don't exist in the profile are dropped. Missing details become placeholders like `[add metric]` instead of guesses.
+- **Validated output.** Every model response is parsed against a Zod schema, with one automatic repair retry.
+- **Measured, not guessed.** Speaking pace and filler words are counted in code; the model only interprets them.
+- **Evaluated.** An eval harness scores grounding (unsupported claims), relevance, concept coverage, role adaptivity and scoring consistency across sample JDs.
+
+## Product decisions
+
+Prepy was built as an MBA product-management project, so the decisions are documented like a product. A few examples (full log in [`docs/decision-log.md`](docs/decision-log.md)):
+
+- **A guided workflow, not a chat box.** Resume → role or JD → fit → prep kit → practice. Each step has a clear output.
+- **Role-agnostic from day one.** Placements cover sales, analytics, product, consulting and more; nothing is hard-coded to one role family.
+- **Free to run.** Gemini and Groq free tiers, with automatic fallback between providers, timeouts and quota-aware routing, so practice keeps working when one free tier is busy.
+- **Voice in the browser.** The Web Speech API gives speaking practice and read-aloud at zero cost, before investing in a real-time voice tutor.
+- **Variety by design.** Topic generators combine a random theme and style per request and exclude topics already shown, so "Different topic" really is different.
+
+## Architecture
+
 ```
-
-Open http://localhost:3000 in **Chrome or Edge** (needed for voice input). You land on the sign-in page: choose **Create account**, then upload your resume or type your details.
-
-`.env.local` also needs `AUTH_SECRET` (it signs the sign-in cookie). Generate one with:
-
-```powershell
-node -e "console.log(require('crypto').randomBytes(32).toString('base64url'))"
+Browser (Next.js App Router, React, Tailwind)
+   │  guided pages: home · fit map · prep kit · practice · mock interview · impromptu · GD
+   ▼
+API routes ── withUser(): signed-in check + per-user data scope (Auth.js JWT sessions)
+   │
+   ├── prep / mock / impromptu / gd  orchestration, caching, grounding guards
+   ├── prompts.ts                     21 versioned prompts (P1–P21)
+   ├── llm.ts                         one callLLM(): JSON + Zod + retry + logging,
+   │                                  Gemini → Groq → xAI → Anthropic fallback
+   └── store.ts → SQLite (node:sqlite) every row carries a user_id
 ```
-
-The first account you create takes over any data saved before sign-in existed (`data/prepy.json`, kept as `data/prepy.json.migrated`).
-
-### Turn on "Continue with Google" (optional, about 5 minutes)
-
-Email and password work without this.
-
-1. Go to https://console.cloud.google.com/ and create a project (any name, e.g. "Prepy").
-2. **APIs & Services → OAuth consent screen**: choose **External**, fill in the app name, your email as support and developer contact, and save. Under **Test users**, add the Google accounts that may sign in.
-3. **APIs & Services → Credentials → Create credentials → OAuth client ID**: type **Web application**.
-   - Authorized JavaScript origins: `http://localhost:3000`
-   - Authorized redirect URIs: `http://localhost:3000/api/auth/callback/google`
-4. Copy the **Client ID** and **Client secret** into `.env.local` after `AUTH_GOOGLE_ID=` and `AUTH_GOOGLE_SECRET=`, then restart `npm run dev`. The Google button appears on the sign-in page.
-
-Check the key works: open http://localhost:3000/api/health/llm. You should see `"ok": true`.
-
-If you see "Model … was not found", set `LLM_MODEL` in `.env.local` to a Flash model listed in Google AI Studio and restart `npm run dev`.
-
-Free tier limits: Gemini's free tier allows only a few requests per minute. Building a full prep kit makes 4–6 calls, so the first load can take a minute; Prepy waits and retries automatically when it hits the limit. On the free tier, Google may use your prompts (including resume text) to improve its products.
-
-## Put it on GitHub (first time)
-
-1. On github.com, create a new **private** repository named `prepy`. Leave it empty (no README, no .gitignore, no license).
-2. In PowerShell, in the project folder:
-
-```powershell
-git init
-git add .
-git commit -m "feat: Prepy MVP (resume and JD parsing, fit map, prep kit, practice with voice)"
-git branch -M main
-git remote add origin https://github.com/<your-username>/prepy.git
-git push -u origin main
-```
-
-Your accounts, resumes, JDs and practice answers live in `data/prepy.db` and your keys in `.env.local`. Both are git-ignored, so they never reach GitHub.
-
-After each change: `git add .` → `git commit -m "feat: …"` → `git push`.
-
-## Work on it with Claude Code
-
-In VS Code, open the folder, open the terminal and run `claude`. Start with: "Read CLAUDE.md and BUILD_PLAN.md." `CLAUDE.md` holds the product rules (never invent experience, any role, workflow UI), the stack and the design tokens.
-
-## Run the evals (for the report)
-
-1. Use the app once so your profile is saved. With several accounts, set `$env:PREPY_EVAL_EMAIL = "you@example.com"` to choose whose profile the evals use.
-2. Put JDs in `evals/testset/` as `"<Company> - <Role>.txt"` (two clearly-labelled samples are included). Put real JDs you don't want on GitHub in `evals/testset/private/`. Optionally add `"<same name>.concepts.txt"` with a reference concept list, one per line.
-3. Run:
-
-```powershell
-npx tsx --env-file=.env.local evals/run-evals.ts
-```
-
-Results are written to `evals/results/<date>.md`: grounding (unsupported claims), question and case relevance, concept coverage, role adaptivity and scoring consistency.
-
-## Project layout
 
 | Path | What |
 | --- | --- |
-| `src/app/` | Pages (sign-in, onboarding, setup, fit, kit, practice, tutor) and API routes |
-| `src/auth.ts`, `src/proxy.ts` | Sign-in (Auth.js: Google + email/password) and the signed-in check for every page and API route |
-| `src/lib/prompts.ts` | All prompts P1–P13, versioned |
-| `src/lib/llm.ts` | Model calls: JSON only, Zod validation, one retry, token logging |
-| `src/lib/prep.ts` | Fit map, kit sections, grounding guards, practice queue, study plan |
-| `src/lib/db.ts`, `src/lib/store.ts` | SQLite database (`data/prepy.db`); the store only reads and writes the signed-in user's rows |
-| `src/lib/users.ts` | Accounts, password hashing, one-time move of MVP data into the first account |
-| `src/components/` | UI kit (pastel cards, pill chips, side rail), profile editor, voice dictation hook |
-| `evals/` | Eval harness and test set |
-| `docs/` | Decision log; add mockup screenshots to `docs/mockups/` |
+| `src/app/` | Pages and API routes |
+| `src/lib/llm.ts` | Model calls: provider fallback, timeouts, quota cooldown, schema validation, token logging |
+| `src/lib/prompts.ts` | All prompts, each versioned so evals can compare versions |
+| `src/lib/prep.ts` | Fit map, prep kit, grounding guards, practice queue, study plan |
+| `src/lib/mock.ts`, `impromptu.ts`, `gd.ts` | Mock interviews, impromptu speaking, group discussions |
+| `src/lib/db.ts`, `store.ts` | SQLite schema and a store scoped to the signed-in user |
+| `src/auth.ts`, `src/proxy.ts` | Sign-in (Google + email/password) and route protection |
+| `evals/` | Eval harness and labelled sample JDs |
+| `docs/` | Decision log and setup guide |
 
-## Known limits
+## Run it locally
 
-- Runs locally. Several people can have accounts on one computer, each with their own data.
-- Voice uses the browser's speech recognition (Chrome or Edge). Accuracy for Indian English varies; always check the transcript before scoring.
-- The voice AI tutor is a v1 feature; `/tutor` is a placeholder.
+You need Node.js 22.13+ and a free Gemini or Groq API key.
+
+```bash
+git clone https://github.com/sanehkr08/Prepy-MBA-Placement-Prep-App.git prepy
+cd prepy
+npm install
+cp .env.example .env.local   # add GEMINI_API_KEY (or GROQ_API_KEY) and AUTH_SECRET
+npm run dev
+```
+
+Then open http://localhost:3000 in Chrome or Edge. Full instructions, including Google sign-in and the evals, are in [`docs/SETUP.md`](docs/SETUP.md).
+
+## Roadmap
+
+- **My progress:** scores over time and weakest areas across all practice.
+- **Story bank:** reusable STAR stories drafted from the resume.
+- **Daily drill:** one question a day to keep the habit.
+- **Ask Prepy:** a real-time voice tutor.
+- **Hosted demo** so it can be tried without installing.
+
+## About
+
+Built by **Saneh Kumar** as an MBA product-management project: from PRD and decision log to a working, tested product, built with an AI coding assistant.
