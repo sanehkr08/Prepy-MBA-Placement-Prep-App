@@ -6,11 +6,18 @@ import { Trash2 } from "lucide-react";
 import { api, forgetJD, rememberJD } from "@/lib/client";
 import { ConfirmDialog } from "./ui";
 
-export type JDItem = { id: string; company: string; role: string; created_at: string; overall_label: string | null };
+export type JDItem = {
+  id: string;
+  kind: "jd" | "role";
+  company: string;
+  role: string;
+  created_at: string;
+  overall_label: string | null;
+};
 
 /**
  * The user's earlier JDs, each with a delete button that asks "Are you sure?" first.
- * `hrefFor` picks where a JD opens (prep kit on home, fit map on /jd).
+ * `hrefFor` picks where a JD opens.
  */
 export function JDHistory({
   hrefFor,
@@ -70,7 +77,8 @@ export function JDHistory({
               <span className="min-w-0">
                 <span className="block truncate text-[15px] font-semibold">{j.role}</span>
                 <span className="block text-[12px] text-muted">
-                  {j.company || "Company not given"} · added {new Date(j.created_at).toLocaleDateString()}
+                  {j.kind === "role" ? "Role prep" : j.company || "Company not given"} · added{" "}
+                  {new Date(j.created_at).toLocaleDateString()}
                 </span>
               </span>
               {j.overall_label ? (

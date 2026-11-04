@@ -29,7 +29,7 @@ type FitItem = {
   tip: string;
 };
 type FitResponse = {
-  jd: { id: string; company: string; role: string; role_family: string };
+  jd: { id: string; kind: "jd" | "role"; company: string; role: string; role_family: string };
   fit: { items: FitItem[]; counts: { Strong: number; Partial: number; Gap: number }; overall_label: string };
 };
 
@@ -112,7 +112,7 @@ export default function FitPage() {
           </Link>
         </PanelCard>
       ) : null}
-      <Link href="/jd" className="inline-flex min-h-[44px] items-center self-center text-sm font-medium">
+      <Link href="/" className="inline-flex min-h-[44px] items-center self-center text-sm font-medium">
         Add another JD
       </Link>
     </>
@@ -120,7 +120,13 @@ export default function FitPage() {
 
   return (
     <AppShell active="fit" jdId={jdId} panel={panel}>
-      <PageTitle eyebrow={`Step 2 of 4${data?.jd.company ? ` · ${data.jd.company}` : ""}`}>
+      <PageTitle
+        eyebrow={
+          data?.jd.kind === "role"
+            ? "Prepare for a role · how your resume maps to it"
+            : `Step 2 of 4${data?.jd.company ? ` · ${data.jd.company}` : ""}`
+        }
+      >
         How you fit
         <br />
         {data?.jd.role ?? "…"}

@@ -7,7 +7,7 @@ import { ErrorBox, PrimaryButton, fieldInput, fieldLabel } from "./ui";
 
 /**
  * Add a job description (paste or upload) and go straight to the fit map.
- * Used on the home page and on /jd. `idPrefix` keeps field ids unique per page.
+ * Used on the home page. `idPrefix` keeps field ids unique.
  * With `heading`, the title and the Analyse button share the top row; otherwise the button is at the bottom.
  */
 export function JDForm({

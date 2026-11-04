@@ -37,7 +37,11 @@ type ModelView = {
   placeholders: string[];
   sources: string[];
 };
-type QueueResponse = { jd: { id: string; company: string; role: string }; items: Item[]; attempted: string[] };
+type QueueResponse = {
+  jd: { id: string; kind: "jd" | "role"; company: string; role: string };
+  items: Item[];
+  attempted: string[];
+};
 
 const TYPE_LABEL: Record<string, string> = {
   concept: "Concept",
@@ -293,7 +297,13 @@ function PracticeInner() {
 
   return (
     <AppShell active="practice" jdId={jdId} panel={panel}>
-      <PageTitle eyebrow={`Step 4 of 4${queue ? ` · ${queue.jd.role}${queue.jd.company ? ` · ${queue.jd.company}` : ""}` : ""}`}>
+      <PageTitle
+        eyebrow={
+          queue?.jd.kind === "role"
+            ? `Prepare for a role · ${queue.jd.role}`
+            : `Step 4 of 4${queue ? ` · ${queue.jd.role}${queue.jd.company ? ` · ${queue.jd.company}` : ""}` : ""}`
+        }
+      >
         Practice
       </PageTitle>
 

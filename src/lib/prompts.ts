@@ -1,5 +1,5 @@
 /**
- * All prompts P1–P13. Bump a prompt's version when you change it, so evals can
+ * All prompts P1–P14. Bump a prompt's version when you change it, so evals can
  * compare versions (BUILD_PLAN Task 10).
  */
 import type { JDData, FitMap, Concepts, Questions, Cases, Situational } from "./schemas";
@@ -333,6 +333,24 @@ ${concepts.map((c, i) => `[${i + 1}] ${c.name} (topic: ${c.topic}): ${c.what}`).
 Return JSON:
 {"concepts": [{"id": the concept's number from the list, "name": the concept name, "questions": [{"text": the question as the interviewer would say it, "style": one of scenario|application|compare|numbers|judgment|troubleshoot|definition}] (exactly 2 questions, in two different styles)}]}
 Include every concept listed.`,
+};
+
+/* P14 — Role profile: "Prepare for a role" without a JD; same JSON shape as P2 */
+export const P14 = {
+  name: "P14_role_profile",
+  version: "v1",
+  system: `You write the standard profile of a role as it is hired from MBA campus placements (B-school placements, India and similar markets). Describe what employers typically expect from a fresh MBA hire in this role across companies: the core skills, the day-to-day responsibilities and the behavioural competencies. Be accurate and typical. Do not invent anything specific to one company.`,
+  user: (role: string) => `ROLE: ${role}
+
+Return JSON:
+{"role": the role title, cleaned up,
+ "role_family": one of "sales","account management","marketing","analytics","product","consulting","finance","operations","hr","general management","other",
+ "seniority": "Entry level (fresh MBA)" or the typical level for this role,
+ "must_have": [{"text": one clear requirement, "category": short label like "Analytics","Strategy","People","Communication"}] (6 to 9 items),
+ "nice_to_have": [{"text": string, "category": string}] (2 to 4),
+ "responsibilities": [the typical day-to-day responsibilities] (6 to 8),
+ "competencies": [behavioural competencies the role needs] (5 to 7),
+ "company_context": "General preparation for this role, not tied to one company."}`,
 };
 
 export const conceptNames = (c: Concepts) => c.topics.flatMap((t) => t.items.map((i) => i.name));

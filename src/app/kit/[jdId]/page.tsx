@@ -49,7 +49,7 @@ const MORE_NOUN: Record<Tab, string> = {
   resume: "resume and gap questions",
 };
 
-type JDInfo = { id: string; company: string; role: string; role_family: string };
+type JDInfo = { id: string; kind: "jd" | "role"; company: string; role: string; role_family: string };
 type SectionData = { concepts?: Concepts; questions?: Questions; cases?: Cases; situational?: Situational };
 
 type OutlineView = {
@@ -422,7 +422,13 @@ export default function KitPage() {
           onClose={() => setReading(null)}
         />
       ) : null}
-      <PageTitle eyebrow={`Step 3 of 4${jd ? ` · ${jd.role}${jd.company ? ` · ${jd.company}` : ""}` : ""}`}>
+      <PageTitle
+        eyebrow={
+          jd?.kind === "role"
+            ? `Prepare for a role · ${jd.role}`
+            : `Step 3 of 4${jd ? ` · ${jd.role}${jd.company ? ` · ${jd.company}` : ""}` : ""}`
+        }
+      >
         Everything this
         <br />
         role needs you to know
@@ -431,7 +437,7 @@ export default function KitPage() {
       <div className="mt-7 flex gap-3 overflow-x-auto pb-1" role="tablist" aria-label="Kit sections">
         {TABS.map((t) => (
           <PillChip key={t.key} active={tab === t.key} icon={t.icon} onClick={() => setTab(t.key)}>
-            {t.label}
+            {t.key === "questions" && jd?.kind === "role" ? "Frequently asked" : t.label}
           </PillChip>
         ))}
       </div>

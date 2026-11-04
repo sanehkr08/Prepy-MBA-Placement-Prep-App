@@ -34,7 +34,7 @@ Full spec: the Prepy PRD doc in the claude.ai Project (export it as Markdown to 
 | PDF text | `unpdf` |
 | DOCX text | `mammoth` |
 | Auth | Auth.js v5 (`next-auth@5` beta) in `src/auth.ts`: Google (when `AUTH_GOOGLE_ID`/`AUTH_GOOGLE_SECRET` are set) + email/password (scrypt hashes, `src/lib/users.ts`). JWT sessions signed with `AUTH_SECRET`. `src/proxy.ts` (Next 16's renamed middleware) sends signed-out page requests to /signin and answers API requests with 401 |
-| Storage | SQLite via Node's built-in `node:sqlite` (`data/prepy.db`, `src/lib/db.ts`; Node 22.13+, no native build tools). `src/lib/store.ts` keeps the same API but is scoped to the current user: every API route is wrapped in `withUser` (`src/lib/api-auth.ts`), which runs the work inside `runAsUser` (`src/lib/user-context.ts`). Background work (e.g. `after()`) must be wrapped in `runAsUser` too |
+| Storage | SQLite via Node's built-in `node:sqlite` (`data/prepy.db`, `src/lib/db.ts`; Node 22.13+, no native build tools). A "Prepare for a role" kit is stored as a `jds` row with `kind = 'role'` (empty company, data from P14), so the fit map, kit, practice and model answers work unchanged; `kind = 'jd'` is a user's JD. `src/lib/store.ts` keeps the same API but is scoped to the current user: every API route is wrapped in `withUser` (`src/lib/api-auth.ts`), which runs the work inside `runAsUser` (`src/lib/user-context.ts`). Background work (e.g. `after()`) must be wrapped in `runAsUser` too |
 | Voice (MVP) | Browser Web Speech API (`SpeechRecognition` / `webkitSpeechRecognition`), `lang = 'en-IN'`, interim results on |
 | Icons | `lucide-react` (stroke icons only, no emoji in the UI) |
 | Font | DM Sans, self-hosted via `@fontsource-variable/dm-sans` (no network fetch at build) |
@@ -51,10 +51,9 @@ prepy/
     app/
       signin/                          Sign in / create account (Google + email/password)
       onboarding/page.tsx              First sign-in: upload resume or enter details → profile
-      page.tsx                         Home: random time-of-day greeting (src/lib/greetings.ts), two paths: Prepare for a role / Prepare for your JD
-      jd/page.tsx                      Prepare for your JD: add a JD, earlier JDs
+      page.tsx                         Home: random time-of-day greeting (src/lib/greetings.ts), two paths: Prepare for a role / Prepare for your JD (the JD form and earlier JDs live here)
       profile/page.tsx                 View / edit profile, replace from a new resume, delete all data
-      role/[slug]/page.tsx             Prepare for a role (roles in src/lib/roles.ts); placeholder until v1 step 3
+      role/[slug]/page.tsx             Prepare for a role (listed in src/lib/roles.ts, or typed: /role/custom?name=…): builds or reopens the role kit, then opens its fit map
       fit/[jdId]/page.tsx              Fit and Gap Map
       kit/[jdId]/page.tsx              Role prep kit (6 tabs, Read more study notes per concept, Generate More per concept topic, answer outlines, study plan)
       practice/[jdId]/page.tsx         Practice: kit categories → subcategories → question list; typed + voice dictation, undo/redo, rubric feedback
@@ -66,6 +65,8 @@ prepy/
         resume/route.ts                POST upload/paste → P1 parse (not saved yet)
         profile/route.ts               GET / PUT the confirmed profile
         jd/route.ts                    GET list, POST add JD → P2 parse
+        jd/[id]/route.ts               DELETE a JD with its fit map, kit, plan and attempts
+        role/route.ts                  POST { name } → the user's saved role kit, or a new one from a standard role profile (P14)
         fit/[jdId]/route.ts            GET fit map (P3), cached; ?refresh=1; then prefetches the kit in the background
         kit/[jdId]/[section]/route.ts  GET concepts | questions | cases | situational (P4–P7), cached
         kit/[jdId]/more/route.ts       POST Generate More: new, non-repeating items for one kit tab, or one concept topic (P10)
@@ -80,7 +81,7 @@ prepy/
     components/   ui.tsx (shell, rail, Back/Next step bar, chips, cards, buttons), ProfileEditor.tsx, hooks.ts (useProfile, useDictation, useUndoableText)
     lib/
       llm.ts            callLLM (JSON + Zod + one retry + logging), errorResponse
-      prompts.ts        P1–P13 with versions + GROUNDING_RULE
+      prompts.ts        P1–P14 with versions + GROUNDING_RULE
       prep.ts           orchestration, caching, in-flight request sharing, kit prefetch, Generate More, grounding guards, practice queue, study plan
       profile-lines.ts  numbered profile lines (ED1, EX1.B2, AC1…) used for citations
       schemas.ts        Zod schemas
@@ -153,7 +154,7 @@ Free-tier note: on Gemini's free tier, Google may use prompts and outputs to imp
 
 ## 9. Out of scope for the MVP
 
-Video answers, RAG over case books, deployment beyond an optional Vercel preview. (Version 1 plan, in order: accounts and onboarding (done), home page with greeting and two paths (done), Prepare for a role, mock interview, impromptu speaking, group discussion.)
+Video answers, RAG over case books, deployment beyond an optional Vercel preview. (Version 1 plan, in order: accounts and onboarding (done), home page with greeting and two paths (done), Prepare for a role (done), mock interview, impromptu speaking, group discussion.)
 
 ## 10. Build status
 

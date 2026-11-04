@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { House, FileText, Target, BookOpen, Mic, AudioLines, LoaderCircle, ArrowLeft, ArrowRight, LogOut, UserRound } from "lucide-react";
+import { House, Target, BookOpen, Mic, AudioLines, LoaderCircle, ArrowLeft, ArrowRight, LogOut, UserRound } from "lucide-react";
 import { signOut } from "next-auth/react";
 import { lastJD } from "@/lib/client";
 
@@ -33,7 +33,7 @@ export function Logo({ size = 44, wordmark = false, light = false }: { size?: nu
   );
 }
 
-type RailKey = "home" | "setup" | "fit" | "kit" | "practice" | "tutor" | "profile";
+type RailKey = "home" | "fit" | "kit" | "practice" | "tutor" | "profile";
 
 function RailLink({
   href,
@@ -90,9 +90,6 @@ export function SideRail({ active, jdId }: { active: RailKey; jdId?: string | nu
       <RailLink href="/" label="Home" active={active === "home"}>
         <House size={22} strokeWidth={1.6} />
       </RailLink>
-      <RailLink href="/jd" label="Your JD" active={active === "setup"}>
-        <FileText size={22} strokeWidth={1.6} />
-      </RailLink>
       <RailLink href={`/fit/${id}`} label="Fit and gap map" active={active === "fit"} disabled={!id}>
         <Target size={22} strokeWidth={1.6} />
       </RailLink>
@@ -125,7 +122,6 @@ export function SideRail({ active, jdId }: { active: RailKey; jdId?: string | nu
 
 const STEPS: { key: RailKey; label: string; href: (id: string) => string }[] = [
   { key: "home", label: "Home", href: () => "/" },
-  { key: "setup", label: "Your JD", href: () => "/jd" },
   { key: "fit", label: "Fit map", href: (id) => `/fit/${id}` },
   { key: "kit", label: "Prep kit", href: (id) => `/kit/${id}` },
   { key: "practice", label: "Practice", href: (id) => `/practice/${id}` },
@@ -138,7 +134,7 @@ export function StepNav({ active, jdId }: { active: RailKey; jdId?: string | nul
   // Home is the start of the flow, not a step with its own Back/Next bar.
   if (i <= 0) return null;
   const back = STEPS[i - 1];
-  // Every step after setup needs a JD.
+  // Every step after Home needs a JD.
   const next = id ? STEPS[i + 1] : undefined;
   const pill = "inline-flex min-h-[44px] items-center gap-2 rounded-full px-4 text-sm font-semibold transition";
   return (

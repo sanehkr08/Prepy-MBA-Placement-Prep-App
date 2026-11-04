@@ -30,7 +30,8 @@ CREATE TABLE IF NOT EXISTS jds (
   role TEXT NOT NULL DEFAULT '',
   raw_text TEXT NOT NULL DEFAULT '',
   data TEXT NOT NULL,
-  created_at TEXT NOT NULL
+  created_at TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'jd'
 );
 CREATE INDEX IF NOT EXISTS jds_user ON jds(user_id);
 CREATE TABLE IF NOT EXISTS fit_maps (
@@ -84,16 +85,31 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 `;
 
+/** Add columns that newer versions need to databases created by older ones. */
+function migrate(conn: DatabaseSync) {
+  const jdCols = (conn.prepare("PRAGMA table_info(jds)").all() as { name: string }[]).map((c) => c.name);
+  // 'jd' = a job description the user added; 'role' = "Prepare for a role" (a standard role profile).
+  if (!jdCols.includes("kind")) conn.exec("ALTER TABLE jds ADD COLUMN kind TEXT NOT NULL DEFAULT 'jd'");
+}
+
+// Bump when SCHEMA or migrate() changes, so a running server applies it without a restart.
+const SCHEMA_VERSION = 2;
+
 // One connection per server process (kept on globalThis so dev hot reloads reuse it).
-const g = globalThis as unknown as { prepyDb?: DatabaseSync };
+const g = globalThis as unknown as { prepyDb?: DatabaseSync; prepySchemaVersion?: number };
 
 export function db(): DatabaseSync {
   if (!g.prepyDb) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
     const conn = new DatabaseSync(path.join(DATA_DIR, "prepy.db"));
     conn.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
-    conn.exec(SCHEMA);
     g.prepyDb = conn;
+  }
+  // A hot reload keeps the old connection, so schema changes are applied here, not only on open.
+  if (g.prepySchemaVersion !== SCHEMA_VERSION) {
+    g.prepyDb.exec(SCHEMA);
+    migrate(g.prepyDb);
+    g.prepySchemaVersion = SCHEMA_VERSION;
   }
   return g.prepyDb;
 }

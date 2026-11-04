@@ -8,8 +8,11 @@ import { db, transaction } from "./db";
 import { currentUserId, maybeUserId } from "./user-context";
 import type { Profile, JDData, FitMap, PracticeScore } from "./schemas";
 
+export type JDKind = "jd" | "role";
+
 export type JDRecord = {
   id: string;
+  kind: JDKind;
   company: string;
   role: string;
   raw_text: string;
@@ -53,6 +56,7 @@ const uid = () => currentUserId();
 function jdFromRow(r: Row): JDRecord {
   return {
     id: String(r.id),
+    kind: r.kind === "role" ? "role" : "jd",
     company: String(r.company),
     role: String(r.role),
     raw_text: String(r.raw_text),
@@ -80,12 +84,19 @@ export const store = {
   },
 
   /* job descriptions */
-  createJD: (input: Omit<JDRecord, "id" | "created_at">) => {
-    const rec: JDRecord = { ...input, id: randomUUID().slice(0, 8), created_at: now() };
+  createJD: (input: Omit<JDRecord, "id" | "created_at" | "kind"> & { kind?: JDKind }) => {
+    const rec: JDRecord = { ...input, kind: input.kind ?? "jd", id: randomUUID().slice(0, 8), created_at: now() };
     db()
-      .prepare("INSERT INTO jds (id, user_id, company, role, raw_text, data, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(rec.id, uid(), rec.company, rec.role, rec.raw_text, JSON.stringify(rec.data), rec.created_at);
+      .prepare("INSERT INTO jds (id, user_id, company, role, raw_text, data, created_at, kind) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+      .run(rec.id, uid(), rec.company, rec.role, rec.raw_text, JSON.stringify(rec.data), rec.created_at, rec.kind);
     return rec;
+  },
+  /** The user's saved "Prepare for a role" kit for this role name, if any. */
+  findRoleJD: (roleName: string) => {
+    const r = db()
+      .prepare("SELECT * FROM jds WHERE user_id = ? AND kind = 'role' AND lower(role) = lower(?) ORDER BY created_at DESC LIMIT 1")
+      .get(uid(), roleName.trim()) as Row | undefined;
+    return r ? jdFromRow(r) : null;
   },
   getJD: (id: string) => {
     const r = db().prepare("SELECT * FROM jds WHERE id = ? AND user_id = ?").get(id, uid()) as Row | undefined;
@@ -94,13 +105,14 @@ export const store = {
   listJDs: () => {
     const rows = db()
       .prepare(
-        `SELECT j.id, j.company, j.role, j.created_at, f.data AS fit
+        `SELECT j.id, j.kind, j.company, j.role, j.created_at, f.data AS fit
          FROM jds j LEFT JOIN fit_maps f ON f.user_id = j.user_id AND f.jd_id = j.id
          WHERE j.user_id = ? ORDER BY j.created_at DESC`,
       )
       .all(uid()) as Row[];
     return rows.map((r) => ({
       id: String(r.id),
+      kind: (r.kind === "role" ? "role" : "jd") as JDKind,
       company: String(r.company),
       role: String(r.role),
       created_at: String(r.created_at),

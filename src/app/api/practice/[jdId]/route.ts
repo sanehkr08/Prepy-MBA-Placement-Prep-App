@@ -15,7 +15,7 @@ async function handleGET(_req: Request, { params }: { params: Promise<{ jdId: st
     const attempts = store.listAttempts(jdId);
     const attempted = Array.from(new Set(attempts.map((a) => a.item_id)));
     return Response.json({
-      jd: { id: jd.id, company: jd.company, role: jd.role },
+      jd: { id: jd.id, kind: jd.kind, company: jd.company, role: jd.role },
       items: practiceItems(jdId),
       attempted,
     });

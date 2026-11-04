@@ -17,7 +17,7 @@ async function handleGET(req: Request, { params }: { params: Promise<{ jdId: str
     // Start building the prep kit while the user reads the fit map.
     after(() => runAsUser(userId, () => prefetchKit(jdId)));
     return Response.json({
-      jd: { id: jd.id, company: jd.company, role: jd.role, role_family: jd.data.role_family },
+      jd: { id: jd.id, kind: jd.kind, company: jd.company, role: jd.role, role_family: jd.data.role_family },
       fit: {
         ...fit,
         items: fit.items.map((i) => ({ ...i, source_label: refLabel(lines, i.source_ref) })),
